@@ -8,5 +8,5 @@ infra/build/
 infra/cdk.out/
 infra/.origin-secret
 .env
-.env.*
+.env.local
 .DS_Store
