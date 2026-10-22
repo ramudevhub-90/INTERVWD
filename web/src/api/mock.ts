@@ -129,7 +129,7 @@ function seed(): Db {
     },
     {
       id: 'iv_neha', orgId: org.id, jobId: 'job_backend', roundId: be1.id, candidateId: 'cand_neha', slotStart: at(-1, 15), status: 'completed', startedAt: at(-1, 15), endedAt: at(-1, 15, 16), snapshots: [], turns: [],
-      report: report(2.7, 'Motivated and honest about gaps; limited experience with Python backends and retries.', ['Honest about what she had not done'], ['Could not describe a retry-safe API', 'Little production debugging experience'],
+      report: report(2.7, 'Motivated and honest about gaps; limited experience with Python backends and retries.', ['Honest about gaps in experience'], ['Could not describe a retry-safe API', 'Little production debugging experience'],
         [[2.6, '"I have mostly built APIs in Express."'], [2.5, 'General answer about adding more servers.'], [3.0, 'Reasonable approach to the bug question.'], [2.9, 'Short answers.']], be1),
     },
     { id: 'iv_vikram', orgId: org.id, jobId: 'job_backend', roundId: be1.id, candidateId: 'cand_vikram', slotStart: at(0, 15), status: 'scheduled', snapshots: [], turns: [] },

@@ -134,7 +134,7 @@ def reset_demo(svc: Service) -> None:
         [(3.4, '"Most of my recent work is in Go; in Python I have written internal services with Flask."'), (4.6, '"Partition by customer, not by order, so hot sales do not create a hot key."'),
          (3.9, "Worked through the traffic spike question step by step."), (3.8, "Clear, slightly long answers.")]))
     iv("iv_demo_neha", "cand_neha", "job_backend", be1, -26, "completed", None, _report(
-        be1, 2.7, "Motivated and honest about gaps; limited experience with Python backends and retries.", ["Honest about what she had not done"],
+        be1, 2.7, "Motivated and honest about gaps; limited experience with Python backends and retries.", ["Honest about gaps in experience"],
         ["Could not describe a retry-safe API", "Little production debugging experience"],
         [(2.6, '"I have mostly built APIs in Express."'), (2.5, "General answer about adding more servers."), (3.0, "Reasonable approach to the bug question."), (2.9, "Short answers.")]))
     iv("iv_demo_vikram", "cand_vikram", "job_backend", be1, 2, "scheduled")

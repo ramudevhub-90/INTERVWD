@@ -21,7 +21,8 @@ KEEP_SECONDS = 30 * 60
 MAX_STEPS = 4
 
 SYSTEM = """You are Alexa+, helping a recruiter run their hiring pipeline with Intervwd.
-Answer in one to three short spoken sentences, no lists or markdown.
+Answer in at most three short spoken sentences (about 60 words), no lists, line breaks or markdown.
+Refer to candidates by name, never with gendered pronouns.
 Use the tools for every fact; never invent candidates, scores or times.
 To move, hold or reject a candidate: first call the tool with confirm=false and read back what will happen;
 only call it again with confirm=true after the recruiter clearly says yes in their next message.
@@ -71,6 +72,13 @@ def run_tool(svc: Service, session: Doc, name: str, args: Doc, tz_offset_min: in
         return {"error": str(e), "say": str(e)}
 
 
+def spoken(text: str, sentences: int = 3) -> str:
+    """Alexa reads replies aloud: one paragraph, at most a few sentences."""
+    flat = re.sub(r"\s+", " ", re.sub(r"[*#`_]", "", text)).strip()
+    parts = re.split(r"(?<=[.!?])\s+", flat)
+    return " ".join(parts[:sentences])
+
+
 class Assistant:
     def __init__(self, svc: Service, nova: Nova) -> None:
         self.svc = svc
@@ -114,7 +122,7 @@ class Assistant:
                 text = " ".join(b["text"] for b in reply["content"] if "text" in b).strip()
                 text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.S).strip()
                 doc["messages"] = msgs
-                return {"text": text or "Done.", **({"tool": ", ".join(used)} if used else {})}
+                return {"text": spoken(text) or "Done.", **({"tool": ", ".join(used)} if used else {})}
             results = []
             for call in calls:
                 used.append(call["name"])

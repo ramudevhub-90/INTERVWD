@@ -8,13 +8,18 @@ fallback, so a throttled or slow model never stalls an interview.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
 
 from .nova import Nova
 
+log = logging.getLogger(__name__)
 Doc = dict[str, Any]
+
+# Reports and questions must not guess a candidate's gender (or anything else) from their name.
+NEUTRAL = "Refer to the candidate by name or as 'the candidate'; never use gendered pronouns."
 
 STOP = set(
     "the a an and or but so to of in on for with at by from that this it is was were be been i we you they my our me us as if then than "
@@ -31,6 +36,10 @@ KNOWN_SKILLS = [
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def possessive(name: str) -> str:
+    return f"{name}'" if name.endswith("s") else f"{name}'s"
 
 
 def turn(role: str, kind: str, text: str, question_index: int) -> Doc:
@@ -51,7 +60,7 @@ CV_SCHEMA = {
 
 def read_cv(nova: Nova, data: bytes, content_type: str, job: Doc) -> Doc:
     result = nova.json(
-        "You read CVs for a recruiter. Be factual and brief. Never guess protected characteristics.",
+        "You read CVs for a recruiter. Be factual and brief. Never guess protected characteristics. " + NEUTRAL,
         f"Summarise this CV for the job '{job['title']}': {job['description']}",
         CV_SCHEMA,
         document=(data, content_type),
@@ -91,15 +100,18 @@ def plan(nova: Nova, round: Doc, job: Doc, candidate: Doc) -> list[str]:
     result = nova.json(
         "You are a fair, structured interviewer. Reword each core question so it fits this candidate's background, "
         "keeping exactly the same intent and difficulty, so every candidate is assessed on the same thing. "
-        "One or two short spoken sentences each. No preamble, no numbering.",
+        "One or two short spoken sentences each. No preamble, no numbering. " + NEUTRAL,
         f"Job: {job['title']}. {job['description']}\nCandidate: {candidate.get('cvSummary', '')} Skills: {', '.join(candidate.get('skills', []))}\n"
-        f"Core questions, in order:\n" + "\n".join(f"{i + 1}. {q}" for i, q in enumerate(core)),
+        f"Return exactly {len(core)} questions, one per core question, in the same order.\nCore questions:\n"
+        + "\n".join(f"{i + 1}. {q}" for i, q in enumerate(core)),
         PLAN_SCHEMA,
-        max_tokens=900,
+        max_tokens=1200,
     )
-    worded = (result or {}).get("questions") or []
-    if len(worded) == len(core) and all(isinstance(q, str) and 10 < len(q) < 400 for q in worded):
-        return [q.strip() for q in worded]
+    worded = [re.sub(r"^\s*(?:\d+[.)]|[-*])\s*", "", q).strip() for q in (result or {}).get("questions") or [] if isinstance(q, str)]
+    if len(worded) == len(core) and all(10 < len(q) < 600 for q in worded):
+        return worded
+    if result is not None:
+        log.warning("Nova question plan rejected: %d of %d questions, lengths %s", len(worded), len(core), [len(q) for q in worded])
     return [personalise(q, candidate, i) for i, q in enumerate(core)]
 
 
@@ -133,7 +145,7 @@ def follow_up(nova: Nova, question: str, answer: str, round: Doc) -> str:
     result = nova.json(
         "You are a fair, friendly interviewer. Ask ONE short follow-up question (max 30 words) that digs into the most important "
         "thing the candidate said, or asks for a concrete example if the answer was vague. Never give feedback or hints, "
-        "never ask about age, family, health, religion, nationality or other protected characteristics.",
+        "never ask about age, family, health, religion, nationality or other protected characteristics. " + NEUTRAL,
         f"Assessing: {', '.join(c['name'] for c in round['criteria'])}\nQuestion: {question}\nAnswer: {answer[:3000]}",
         FOLLOW_SCHEMA,
         max_tokens=150,
@@ -158,7 +170,7 @@ def start(nova: Nova, interview: Doc, round: Doc, job: Doc, candidate: Doc, org_
     n = len(round["questions"])
     turns = [
         turn("interviewer", "greeting",
-             f"Hi {first}, thanks for joining. I'm the interviewer for {org_name}'s {round['name']}. It takes about "
+             f"Hi {first}, thanks for joining. I'm the interviewer for {possessive(org_name)} {round['name']}. It takes about "
              f"{round['durationMin']} minutes and {n} questions, and I may ask a follow-up after each. Take your time; there are no trick questions.", 0),
         turn("interviewer", "question", interview["plan"][0], 0),
     ]
@@ -267,7 +279,7 @@ def score(nova: Nova, interview: Doc, round: Doc, job: Doc) -> Doc:
         "You score structured job interviews fairly and consistently. Judge only what the candidate said, against the rubric. "
         "Ignore accent, grammar and filler words, and never consider protected characteristics. Quote evidence. "
         "Scores: 1 no evidence, 2 below the bar, 3 meets the bar, 4 strong, 5 exceptional. You never recommend hiring or rejecting; "
-        "a recruiter decides.",
+        "a recruiter decides. " + NEUTRAL,
         f"Job: {job['title']}. {job['description']}\nRound: {round['name']}\nRubric:\n{rubric}\n\nTranscript:\n{transcript[:24000]}",
         REPORT_SCHEMA,
         max_tokens=1500,
