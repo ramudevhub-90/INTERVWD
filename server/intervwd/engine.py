@@ -80,11 +80,10 @@ def _pdf_text(data: bytes) -> str:
 
 # ---------- Questions ----------
 
-PLAN_SCHEMA = {
-    "type": "object",
-    "properties": {"questions": {"type": "array", "items": {"type": "string"}}},
-    "required": ["questions"],
-}
+def plan_schema(core: list[str]) -> Doc:
+    """One named field per core question (q1, q2...): filled far more reliably than a list."""
+    props = {f"q{i + 1}": {"type": "string", "description": f"Reworded: {q}"} for i, q in enumerate(core)}
+    return {"type": "object", "properties": props, "required": list(props)}
 
 
 def personalise(question: str, candidate: Doc, index: int) -> str:
@@ -102,16 +101,16 @@ def plan(nova: Nova, round: Doc, job: Doc, candidate: Doc) -> list[str]:
         "keeping exactly the same intent and difficulty, so every candidate is assessed on the same thing. "
         "One or two short spoken sentences each. No preamble, no numbering. " + NEUTRAL,
         f"Job: {job['title']}. {job['description']}\nCandidate: {candidate.get('cvSummary', '')} Skills: {', '.join(candidate.get('skills', []))}\n"
-        f"Return exactly {len(core)} questions, one per core question, in the same order.\nCore questions:\n"
-        + "\n".join(f"{i + 1}. {q}" for i, q in enumerate(core)),
-        PLAN_SCHEMA,
+        f"Fill q1 to q{len(core)}, one reworded question per core question.\nCore questions:\n"
+        + "\n".join(f"q{i + 1}. {q}" for i, q in enumerate(core)),
+        plan_schema(core),
         max_tokens=2000,
     )
-    worded = [re.sub(r"^\s*(?:\d+[.)]|[-*])\s*", "", q).strip() for q in (result or {}).get("questions") or [] if isinstance(q, str)]
+    worded = [re.sub(r"^\s*(?:q?\d+[.)]|[-*])\s*", "", str((result or {}).get(f"q{i + 1}") or "")).strip() for i in range(len(core))]
     if len(worded) == len(core) and all(10 < len(q) < 600 for q in worded):
         return worded
     if result is not None:
-        log.warning("Nova question plan rejected: %d of %d questions, lengths %s", len(worded), len(core), [len(q) for q in worded])
+        log.warning("Nova question plan rejected: lengths %s", [len(q) for q in worded])
     return [personalise(q, candidate, i) for i, q in enumerate(core)]
 
 
