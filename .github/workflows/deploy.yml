@@ -1,0 +1,112 @@
+# Test, build and deploy Intervwd to AWS on every push to main.
+#
+# No AWS keys are stored anywhere: GitHub signs in to AWS with a short-lived OIDC token and assumes
+# the role in vars.AWS_DEPLOY_ROLE_ARN, which only trusts this repository's production environment.
+#
+# Repository settings (Settings → Secrets and variables → Actions):
+#   Secret   ORIGIN_SECRET   value of infra/.origin-secret (lets CloudFront reach the server)
+#   Secret   DEMO_CODE       fixed 6-digit sign-in code for demo@intervwd.com (infra/.demo-code)
+# Optional variables override the defaults below: AWS_DEPLOY_ROLE_ARN, DOMAIN, NOVA_ROLE_ARN
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Server tests
+        working-directory: server
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --quiet -e . pytest httpx
+          .venv/bin/pytest -q -rf --tb=short
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            infra/package-lock.json
+
+      - name: Web typecheck and build
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            infra/package-lock.json
+
+      - name: Install
+        run: |
+          python -m venv server/.venv
+          npm ci --prefix web
+          npm ci --prefix infra
+
+      - name: Secrets
+        env:
+          ORIGIN_SECRET: ${{ secrets.ORIGIN_SECRET }}
+        run: |
+          if [ -z "$ORIGIN_SECRET" ]; then echo "::error::Set the ORIGIN_SECRET repository secret"; exit 1; fi
+          umask 077
+          printf '%s' "$ORIGIN_SECRET" > infra/.origin-secret
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN || 'arn:aws:iam::992189742260:role/IntervwdGitHubDeploy' }}
+          aws-region: us-east-1
+
+      - name: Deploy
+        working-directory: infra
+        env:
+          DOMAIN: ${{ vars.DOMAIN || 'intervwd.com' }}
+          NOVA_ROLE_ARN: ${{ vars.NOVA_ROLE_ARN }}
+          DEMO_CODE: ${{ secrets.DEMO_CODE }}
+        run: |
+          args=(-c "domain=$DOMAIN")
+          [ -n "$NOVA_ROLE_ARN" ] && args+=(-c "novaRole=$NOVA_ROLE_ARN")
+          npm run deploy -- "${args[@]}"
+
+      - name: Remove secrets
+        if: always()
+        run: rm -f infra/.origin-secret
