@@ -14,6 +14,7 @@ import { CandidateReport } from './pages/CandidateReport';
 import { AlexaSimulator } from './pages/Alexa';
 import { Invite } from './pages/Invite';
 import { InterviewRoom } from './pages/InterviewRoom';
+import { Connect } from './pages/Connect';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -25,6 +26,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/signup" element={<SignUp />} />
           <Route path="/i/:code" element={<Invite />} />
           <Route path="/interview/:id" element={<InterviewRoom />} />
+          <Route path="/connect" element={<Connect />} />
           <Route path="/app" element={<Shell />}>
             <Route index element={<Dashboard />} />
             <Route path="jobs" element={<Jobs />} />

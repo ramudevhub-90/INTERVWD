@@ -69,6 +69,7 @@ export interface Candidate {
   email: string;
   cvName: string;
   cvSummary: string;
+  cvUrl?: string; // short-lived link to the uploaded CV (server only)
   skills: string[];
   status: CandidateStatus;
   createdAt: string;

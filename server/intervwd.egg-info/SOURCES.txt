@@ -1,0 +1,7 @@
+pyproject.toml
+intervwd/__init__.py
+intervwd.egg-info/PKG-INFO
+intervwd.egg-info/SOURCES.txt
+intervwd.egg-info/dependency_links.txt
+intervwd.egg-info/requires.txt
+intervwd.egg-info/top_level.txt

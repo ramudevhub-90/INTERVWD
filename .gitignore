@@ -10,3 +10,4 @@ infra/.origin-secret
 .env
 .env.local
 .DS_Store
+infra/.demo-code

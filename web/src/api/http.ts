@@ -26,7 +26,8 @@ function setToken(value: string | null) {
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = {};
+  // Minutes behind UTC, so "today" on the dashboard and Alexa means the recruiter's today.
+  const headers: Record<string, string> = { 'x-tz-offset': String(new Date().getTimezoneOffset()) };
   const t = token();
   if (t) headers.Authorization = `Bearer ${t}`;
   let payload: BodyInit | undefined;
@@ -67,7 +68,23 @@ export class HttpApi implements Api {
   }
 
   async signOut() {
+    await call('POST', '/auth/signout').catch(() => undefined);
     setToken(null);
+  }
+
+  oauthRequest(id: string) {
+    return call<{ clientName: string }>('GET', `/oauth/requests/${encodeURIComponent(id)}`);
+  }
+
+  async oauthDecide(id: string, approve: boolean) {
+    return (await call<{ redirect: string }>('POST', `/oauth/requests/${encodeURIComponent(id)}/${approve ? 'approve' : 'deny'}`)).redirect;
+  }
+
+  /** The interviewer's voice from Amazon Polly. */
+  async speech(text: string): Promise<Blob> {
+    const res = await fetch('/api/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    if (!res.ok) throw new ApiError('No audio', res.status);
+    return res.blob();
   }
 
   createOrg(input: { orgName: string; name: string; email: string }) {

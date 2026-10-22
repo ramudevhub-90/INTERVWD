@@ -1,6 +1,9 @@
-// Voice in and out for the interview room, using the browser's speech APIs.
-// The interviewer speaks with speechSynthesis; the candidate's answer is captioned live with
-// SpeechRecognition (Chrome, Edge, Safari). Where recognition isn't available, candidates type.
+import { api } from '../api';
+import { HttpApi } from '../api/http';
+
+// Voice in and out for the interview room and the Alexa+ simulator.
+// The interviewer speaks with Amazon Polly (the browser's voice in sample mode); the candidate's answer
+// is captioned live with SpeechRecognition (Chrome, Edge, Safari). Elsewhere, candidates type.
 
 type Recognition = {
   lang: string;
@@ -26,9 +29,33 @@ function voice(): SpeechSynthesisVoice | undefined {
   return en.find((v) => /Google UK English Female|Samantha|Microsoft (Aria|Jenny|Neerja)/i.test(v.name)) ?? en.find((v) => v.lang === 'en-IN') ?? en[0];
 }
 
-export function speak(text: string): Promise<void> {
+let audio: HTMLAudioElement | undefined;
+
+/** Speaks with Amazon Polly when the server is live, else with the browser's voice. */
+export async function speak(text: string): Promise<void> {
+  stopSpeaking();
+  if (api instanceof HttpApi) {
+    try {
+      const url = URL.createObjectURL(await api.speech(text));
+      audio = new Audio(url);
+      const played = audio;
+      await new Promise<void>((resolve) => {
+        played.onended = () => resolve();
+        played.onerror = () => resolve();
+        played.onpause = () => resolve();
+        played.play().catch(() => resolve());
+      });
+      URL.revokeObjectURL(url);
+      return;
+    } catch {
+      /* fall back to the browser's voice */
+    }
+  }
+  return speakInBrowser(text);
+}
+
+function speakInBrowser(text: string): Promise<void> {
   if (!canSpeak) return Promise.resolve();
-  speechSynthesis.cancel();
   return new Promise((resolve) => {
     const u = new SpeechSynthesisUtterance(text);
     const v = voice();
@@ -43,6 +70,8 @@ export function speak(text: string): Promise<void> {
 }
 
 export function stopSpeaking() {
+  audio?.pause();
+  audio = undefined;
   if (canSpeak) speechSynthesis.cancel();
 }
 
