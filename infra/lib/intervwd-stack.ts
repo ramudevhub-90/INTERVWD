@@ -24,8 +24,8 @@ export interface IntervwdStackProps extends cdk.StackProps {
   /** A role in another account to call Nova through while this account's Bedrock quota is 0. */
   novaRoleArn?: string;
   /**
-   * A send-only role in another account whose SES is out of the sandbox (Pantry Pilot's
-   * PantryPilotSesSender). It must trust SERVER_ROLE_NAME and allow ses:SendEmail for the domain.
+   * A send-only role in another account whose SES is out of the sandbox (IntervwdSesSender in
+   * 975138397215). It must trust SERVER_ROLE_NAME and allow ses:SendEmail for the domain.
    */
   sesRoleArn?: string;
   /** Fixed sign-in code for the judges' demo account (demo@intervwd.com only). */

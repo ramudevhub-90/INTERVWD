@@ -101,7 +101,7 @@ jobs:
         env:
           DOMAIN: ${{ vars.DOMAIN || 'intervwd.com' }}
           NOVA_ROLE_ARN: ${{ vars.NOVA_ROLE_ARN || 'arn:aws:iam::234951664889:role/PantryPilotBedrockAccess' }}
-          SES_ROLE_ARN: ${{ vars.SES_ROLE_ARN || 'arn:aws:iam::975138397215:role/PantryPilotSesSender' }}
+          SES_ROLE_ARN: ${{ vars.SES_ROLE_ARN || 'arn:aws:iam::975138397215:role/IntervwdSesSender' }}
           DEMO_CODE: ${{ secrets.DEMO_CODE }}
         run: |
           args=(-c "domain=$DOMAIN")
