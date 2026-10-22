@@ -83,10 +83,16 @@ class BedrockNova(Nova):
                     "toolChoice": {"tool": {"name": "answer"}},
                 },
             )
-            for block in res["output"]["message"]["content"]:
+            blocks = res["output"]["message"]["content"]
+            for block in blocks:
                 if "toolUse" in block:
                     return block["toolUse"]["input"]
-            log.warning("Nova returned no tool call")
+            # Sometimes the model writes the JSON as text instead of calling the tool.
+            text = " ".join(b.get("text", "") for b in blocks)
+            found = _json_in(text)
+            if found is not None:
+                return found
+            log.warning("Nova returned no tool call (stop: %s): %s", res.get("stopReason"), text[:300])
         except Exception:
             log.exception("Nova call failed; falling back to rules")
         return None
@@ -105,6 +111,19 @@ class BedrockNova(Nova):
         except Exception:
             log.exception("Nova chat failed; falling back to rules")
             return None
+
+
+def _json_in(text: str) -> dict[str, Any] | None:
+    import json
+
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        value = json.loads(text[start : end + 1])
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def from_env() -> Nova:

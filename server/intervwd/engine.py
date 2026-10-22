@@ -105,7 +105,7 @@ def plan(nova: Nova, round: Doc, job: Doc, candidate: Doc) -> list[str]:
         f"Return exactly {len(core)} questions, one per core question, in the same order.\nCore questions:\n"
         + "\n".join(f"{i + 1}. {q}" for i, q in enumerate(core)),
         PLAN_SCHEMA,
-        max_tokens=1200,
+        max_tokens=2000,
     )
     worded = [re.sub(r"^\s*(?:\d+[.)]|[-*])\s*", "", q).strip() for q in (result or {}).get("questions") or [] if isinstance(q, str)]
     if len(worded) == len(core) and all(10 < len(q) < 600 for q in worded):
