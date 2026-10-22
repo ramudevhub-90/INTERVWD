@@ -160,3 +160,15 @@ def test_oauth_link_and_mcp_tools(env):
     assert "Ana Silva scored 3.9" in str(called["result"])
     refreshed = client.post("/oauth/token", data={"grant_type": "refresh_token", "refresh_token": tok["refresh_token"], "client_id": reg["client_id"]})
     assert refreshed.status_code == 200
+
+
+def test_demo_reset_removes_visitor_data(env):
+    from intervwd import seed
+
+    client, _ = env
+    h = demo_login(client)
+    svc = client.app.state.svc
+    job_id = client.post("/api/jobs", headers=h, json={"title": "Temp", "location": "", "description": "A temporary job added by a visitor."}).json()["id"]
+    seed.reset_demo(svc)
+    assert svc.store.get("job", job_id) is None
+    assert {c["id"] for c in svc.all_candidates(seed.DEMO_ORG)} == seed.SEEDED_CANDIDATES

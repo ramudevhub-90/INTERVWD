@@ -49,8 +49,29 @@ def ensure_demo(svc: Service) -> None:
         svc.store.put("recruiter", DEMO_EMAIL, {"email": DEMO_EMAIL, "name": "Priya Sharma", "orgId": DEMO_ORG, "verified": True})
 
 
+SEEDED_CANDIDATES = {"cand_rahul", "cand_ana", "cand_vikram", "cand_neha", "cand_meera", "cand_arjun"}
+
+
+def _clear_extras(svc: Service) -> None:
+    """Removes candidates and interviews visitors added, so every demo starts from the same company."""
+    for iv in svc.interviews(DEMO_ORG):
+        if iv["candidateId"] not in SEEDED_CANDIDATES:
+            svc.store.delete("interview", iv["id"])
+    for job in svc.jobs(DEMO_ORG):
+        if job["id"] not in ("job_backend", "job_storeops", "job_analyst"):
+            for r in svc.rounds(job["id"]):
+                svc.store.delete("round", r["id"])
+            svc.store.delete("job", job["id"])
+        for c in svc.candidates(job["id"]):
+            if c["id"] not in SEEDED_CANDIDATES:
+                for d in svc.decisions(c["id"]):
+                    svc.store.delete("decision", d["id"])
+                svc.store.delete("candidate", c["id"])
+
+
 def reset_demo(svc: Service) -> None:
     s = svc.store
+    _clear_extras(svc)
     tag = secrets.token_hex(2)  # fresh slot ids each time, so old bookings never block reseeded slots
     s.put("org", DEMO_ORG, {"id": DEMO_ORG, "name": "Northwind Labs", "createdAt": _at(-24 * 30), "seededAt": now()})
     s.put("recruiter", DEMO_EMAIL, {"email": DEMO_EMAIL, "name": "Priya Sharma", "orgId": DEMO_ORG, "verified": True})
