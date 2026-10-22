@@ -23,6 +23,11 @@ export interface IntervwdStackProps extends cdk.StackProps {
   novaMode: 'bedrock' | 'mock';
   /** A role in another account to call Nova through while this account's Bedrock quota is 0. */
   novaRoleArn?: string;
+  /**
+   * A send-only role in another account whose SES is out of the sandbox (Pantry Pilot's
+   * PantryPilotSesSender). It must trust SERVER_ROLE_NAME and allow ses:SendEmail for the domain.
+   */
+  sesRoleArn?: string;
   /** Fixed sign-in code for the judges' demo account (demo@intervwd.com only). */
   demoCode?: string;
   /**
@@ -119,6 +124,7 @@ export class IntervwdStack extends cdk.Stack {
         NOVA_MODEL: 'global.amazon.nova-2-lite-v1:0',
         POLLY_VOICE: 'Kajal',
         ...(props.novaRoleArn ? { NOVA_ROLE_ARN: props.novaRoleArn } : {}),
+        ...(props.sesRoleArn ? { SES_ROLE_ARN: props.sesRoleArn, SES_REGION: this.region } : {}),
         ...(props.demoCode ? { DEMO_CODE: props.demoCode } : {}),
         ...(domainName ? { APP_URL: `https://${domainName}`, MAIL_FROM: `Intervwd <no-reply@${domainName}>` } : {}),
       },
@@ -133,6 +139,9 @@ export class IntervwdStack extends cdk.Stack {
     );
     if (props.novaRoleArn) {
       server.addToRolePolicy(new iam.PolicyStatement({ actions: ['sts:AssumeRole'], resources: [props.novaRoleArn] }));
+    }
+    if (props.sesRoleArn) {
+      server.addToRolePolicy(new iam.PolicyStatement({ actions: ['sts:AssumeRole'], resources: [props.sesRoleArn] }));
     }
     server.addToRolePolicy(new iam.PolicyStatement({ actions: ['polly:SynthesizeSpeech'], resources: ['*'] }));
     server.addToRolePolicy(

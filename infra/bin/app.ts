@@ -24,6 +24,7 @@ new IntervwdStack(app, 'Intervwd', {
   domainName: ctx('domain'), // -c domain=intervwd.com
   novaMode: ctx('nova') === 'mock' ? 'mock' : 'bedrock',
   novaRoleArn: ctx('novaRole'), // -c novaRole=arn:aws:iam::<other>:role/<name> while this account's quota is 0
+  sesRoleArn: ctx('sesRole'), // -c sesRole=arn:aws:iam::<account>:role/<name>: send email through that account's SES
   demoCode,
   hostnames: ctx('hostnames') === 'app' ? 'app' : 'all',
 });

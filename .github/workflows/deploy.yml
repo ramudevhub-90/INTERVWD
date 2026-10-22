@@ -6,7 +6,7 @@
 # Repository settings (Settings → Secrets and variables → Actions):
 #   Secret   ORIGIN_SECRET   value of infra/.origin-secret (lets CloudFront reach the server)
 #   Secret   DEMO_CODE       fixed 6-digit sign-in code for demo@intervwd.com (infra/.demo-code)
-# Optional variables override the defaults below: AWS_DEPLOY_ROLE_ARN, DOMAIN, NOVA_ROLE_ARN
+# Optional variables override the defaults below: AWS_DEPLOY_ROLE_ARN, DOMAIN, NOVA_ROLE_ARN, SES_ROLE_ARN
 
 name: Deploy
 
@@ -100,11 +100,13 @@ jobs:
         working-directory: infra
         env:
           DOMAIN: ${{ vars.DOMAIN || 'intervwd.com' }}
-          NOVA_ROLE_ARN: ${{ vars.NOVA_ROLE_ARN }}
+          NOVA_ROLE_ARN: ${{ vars.NOVA_ROLE_ARN || 'arn:aws:iam::234951664889:role/PantryPilotBedrockAccess' }}
+          SES_ROLE_ARN: ${{ vars.SES_ROLE_ARN || 'arn:aws:iam::975138397215:role/PantryPilotSesSender' }}
           DEMO_CODE: ${{ secrets.DEMO_CODE }}
         run: |
           args=(-c "domain=$DOMAIN")
           [ -n "$NOVA_ROLE_ARN" ] && args+=(-c "novaRole=$NOVA_ROLE_ARN")
+          [ -n "$SES_ROLE_ARN" ] && args+=(-c "sesRole=$SES_ROLE_ARN")
           npm run deploy -- "${args[@]}"
 
       - name: Remove secrets

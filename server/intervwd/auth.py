@@ -50,21 +50,37 @@ def normal_email(email: str) -> str:
 
 
 class Mailer:
-    """Sends email with Amazon SES. Logs instead when MAIL_FROM isn't set (local development)."""
+    """Sends email with Amazon SES. Logs instead when MAIL_FROM isn't set (local development).
 
-    def __init__(self, sender: str | None = None, client: Any = None) -> None:
+    With SES_ROLE_ARN, mail goes out through SES in another account (one out of the SES sandbox),
+    by assuming a send-only role there, the same way Pantry Pilot sends its email."""
+
+    def __init__(self, sender: str | None = None, client: Any = None, role_arn: str | None = None) -> None:
         self.sender = sender if sender is not None else os.environ.get("MAIL_FROM", "")
+        self.role_arn = role_arn if role_arn is not None else os.environ.get("SES_ROLE_ARN") or None
         self._client = client
+        self._expires = 0.0
+
+    def _ses(self) -> Any:
+        import boto3
+
+        if self._client and (not self.role_arn or time.time() < self._expires - 300):
+            return self._client
+        if self.role_arn:
+            creds = boto3.client("sts").assume_role(RoleArn=self.role_arn, RoleSessionName="intervwd-mail")["Credentials"]
+            self._expires = creds["Expiration"].timestamp()
+            self._client = boto3.client("sesv2", region_name=os.environ.get("SES_REGION", "us-east-1"), aws_access_key_id=creds["AccessKeyId"],
+                                        aws_secret_access_key=creds["SecretAccessKey"], aws_session_token=creds["SessionToken"])
+        else:
+            self._client = boto3.client("sesv2")
+        return self._client
 
     def send(self, to: str, subject: str, text: str) -> bool:
         if not self.sender:
             log.info("Email to %s: %s\n%s", to, subject, text)
             return True
         try:
-            import boto3
-
-            self._client = self._client or boto3.client("sesv2")
-            self._client.send_email(
+            self._ses().send_email(
                 FromEmailAddress=self.sender,
                 Destination={"ToAddresses": [to]},
                 Content={"Simple": {"Subject": {"Data": subject}, "Body": {"Text": {"Data": text}}}},
