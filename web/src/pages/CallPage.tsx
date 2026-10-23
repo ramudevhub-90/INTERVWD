@@ -19,7 +19,8 @@ export function CandidateCall() {
         {!data ? <Loading error={error} /> : (
           <>
             <p className="faint">{data.orgName} · {data.jobTitle}</p>
-            <h2 style={{ marginBottom: 14 }}>{data.roundName} with {data.interviewers.join(', ') || 'the team'}</h2>
+            <h2 style={{ marginBottom: 4 }}>{data.roundName}</h2>
+            <p className="muted small" style={{ marginBottom: 14 }}>Interviewer: {data.interviewers.join(', ') || 'the team'}</p>
             {left ? <div className="card empty"><h3>You left the call</h3><p className="muted small" style={{ marginTop: 6 }}>Reload the page to rejoin. {data.orgName}'s team will email you about next steps.</p></div>
               : <VideoCall seat={data} otherName={data.interviewers[0] ?? 'the interviewer'} onLeave={() => setLeft(true)} />}
           </>

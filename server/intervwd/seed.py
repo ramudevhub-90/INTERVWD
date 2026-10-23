@@ -121,7 +121,7 @@ def reset_demo(svc: Service) -> None:
            ["Design an order-tracking service for a million daily orders. Start with the main pieces.", "Where would this design fail first, and how would you know?",
             "How would you roll out a breaking change to its API?"],
            "nw-backend-r2", [("s7", 72, None), ("s8", 96, None)])
-    so1 = round_("round_storeops_1", "job_storeops", 1, "Round 1 · Situational interview",
+    so1 = round_("round_storeops_1", "job_storeops", 1, "Round 1 · Hiring day at the office",
                  _crit("so1", ("Operations", "Plans staffing, stock and daily routines"), ("People leadership", "Coaches and handles conflict fairly"),
                        ("Customer focus", "Puts the customer experience first"), ("Communication", "Clear and calm")),
                  ["Walk me through how you would open a store on a busy festival morning.", "Two team members have a conflict that is affecting customers. What do you do?",

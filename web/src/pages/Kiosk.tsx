@@ -231,6 +231,9 @@ export function RoomKiosk() {
   const [now, setNow] = useState<{ interviewId: string | null; orgName: string; firstName?: string }>();
   const [error, setError] = useState<string>();
   const [active, setActive] = useState<string | null>(null);
+  // Browsers only play sound after a tap, and nobody taps a room's Echo Show during an interview:
+  // whoever sets the room up taps once when switching it on.
+  const [armed, setArmed] = useState(false);
 
   // Check for the next candidate every few seconds while the room is free.
   useEffect(() => {
@@ -249,6 +252,16 @@ export function RoomKiosk() {
     };
   }, [token, room, active]);
 
+  if (!armed) {
+    return (
+      <EchoFrame top={`${now?.orgName ?? 'Interview room'} · ${room}`} right="Set up" state="idle">
+        <p className="echo-sub">{room}</p>
+        <p className="echo-line">Tap once to switch on this interview room</p>
+        <button className="btn btn-primary" style={{ marginTop: 18 }} onClick={() => { speak('This room is ready.'); setArmed(true); }}>Start this room</button>
+        <p className="echo-sub">After this, it runs by itself: candidates come here from reception.</p>
+      </EchoFrame>
+    );
+  }
   if (active) return <EchoSession key={active} id={active} room={room} onFinished={() => setActive(null)} />;
   if (!now) return <div className="centered"><div className="narrow"><Loading error={error} /></div></div>;
   return (

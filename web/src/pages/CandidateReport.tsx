@@ -120,6 +120,7 @@ function InterviewReport({ interview, round, onChange }: { interview: Interview;
         </div>
       </div>
 
+      {r.scoredBy !== 'human' && <>
       <div className="divider" style={{ margin: '20px 0 16px' }} />
       <h3 style={{ marginBottom: 8 }}>Camera snapshots</h3>
       {interview.snapshots.length === 0 ? (
@@ -135,6 +136,7 @@ function InterviewReport({ interview, round, onChange }: { interview: Interview;
         </div>
       )}
       <p className="faint" style={{ marginTop: 6 }}>For your team to check who took the interview. No emotion or personality analysis; when the identity check is on, snapshots are matched against the profile photo.</p>
+      </>}
 
       {interview.turns.length > 0 && (
         <>
