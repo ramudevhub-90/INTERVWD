@@ -28,6 +28,9 @@ export function InterviewRoom() {
   const [check, setCheck] = useState<VerifyResult & { busy?: boolean }>();
   const teamVideo = useRef<HTMLVideoElement>(null);
   const live = useLive(id, stage === 'live', teamVideo);
+  // Like a phone video call: the team member large, you small in the corner; tap the small one to swap.
+  const [selfBig, setSelfBig] = useState(false);
+  const duo = live.teamOnCamera;
   const video = useRef<HTMLVideoElement>(null);
   const listener = useRef<{ stop(): void }>();
   const log = useRef<HTMLDivElement>(null);
@@ -276,9 +279,11 @@ export function InterviewRoom() {
       {header}
       <div className={`room ${stage === 'live' ? 'is-live' : ''}`}>
         <div className="stack room-side">
-          <div className="video">
-            {stream ? <video ref={video} autoPlay muted playsInline /> : <div className="stack" style={{ alignItems: 'center', gap: 8 }}><Icon name="camera" size={32} /><span className="small">{mediaError ?? 'Starting camera…'}</span></div>}
-            {stream && <span className="tag badge badge-success"><Icon name="camera" size={13} /> Camera on</span>}
+          <div className={`video ${duo ? 'duo' : ''}`}>
+            <video ref={teamVideo} autoPlay playsInline className={!duo ? 'hidden' : selfBig ? 'pip' : ''} onClick={() => selfBig && setSelfBig(false)} />
+            {stream ? <video ref={video} autoPlay muted playsInline className={`self ${duo && !selfBig ? 'pip' : ''}`} onClick={() => duo && !selfBig && setSelfBig(true)} /> : <div className="stack" style={{ alignItems: 'center', gap: 8 }}><Icon name="camera" size={32} /><span className="small">{mediaError ?? 'Starting camera…'}</span></div>}
+            {duo ? <span className="tag badge badge-warning">{live.takenOverBy ?? live.watchers[0] ?? 'The team'} · on the call</span>
+              : stream && <span className="tag badge badge-success"><Icon name="camera" size={13} /> Camera on</span>}
           </div>
           <div className="card card-flat" style={{ padding: '14px 16px' }}>
             <p className="small muted">A few snapshots are taken during the interview so the team can see who took it.{data.identity?.required ? ' They’re compared with your profile photo to confirm it’s you; a person reviews any mismatch.' : ''} Speak naturally; you can ask for a question to be repeated.</p>
@@ -286,10 +291,6 @@ export function InterviewRoom() {
         </div>
 
         <div className="card stack room-main" style={{ gap: 14 }}>
-          <div className={`team-tile ${live.teamOnCamera ? '' : 'hidden'}`}>
-            <video ref={teamVideo} autoPlay playsInline />
-            <span className="badge badge-warning">{live.takenOverBy ?? live.watchers[0] ?? 'The team'} · on the call</span>
-          </div>
           {stage === 'setup' ? (
             <>
               <div className="row"><div className="orb"><Icon name="mic" size={24} /></div><div><h3>Before you start</h3><p className="faint">About {data.round.durationMin} minutes · {data.round.questions.length} questions with follow-ups</p></div></div>

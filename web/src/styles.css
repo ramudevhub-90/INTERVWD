@@ -177,8 +177,12 @@ a.list-row:hover { background: var(--surface-2); }
 /* ---------- Interview room ---------- */
 .room { max-width: 1100px; margin: 0 auto; padding: 8px 24px 40px; display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 20px; }
 .video { position: relative; aspect-ratio: 4 / 3; border-radius: var(--radius-lg); overflow: hidden; background: #0b0d18; display: grid; place-items: center; color: #9aa3c7; }
-.video video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-.video .tag { position: absolute; left: 12px; top: 12px; }
+.video video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.video video.self { transform: scaleX(-1); } /* your own camera, mirrored like a mirror */
+.video video.pip { inset: auto 12px 12px auto; width: 30%; height: auto; aspect-ratio: 3 / 4; border-radius: 12px; border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); z-index: 2; cursor: pointer; transition: width 0.2s; }
+.video .tag { z-index: 3; }
+.video .tag { position: absolute; left: 12px; top: 12px; z-index: 3; }
 .orb { width: 56px; height: 56px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; color: #fff; flex: none; }
 .orb.speaking { animation: pulse 1.2s ease-in-out infinite; }
 .orb.listening { background: var(--success); animation: pulse 1.6s ease-in-out infinite; }
@@ -247,6 +251,8 @@ a.list-row:hover { background: var(--surface-2); }
   .room.is-live .room-main { order: 1; } /* during the interview: question first; before it, the camera (identity check) */
   .room.is-live .room-side { order: 2; }
   .room .video { aspect-ratio: 16 / 10; max-height: 30vh; }
+  .room .video.duo { aspect-ratio: 3 / 4; max-height: 52vh; } /* on a call: a proper video-call frame */
+  .video video.pip { width: 34%; }
   .room .question { font-size: 17px; }
   .room .card { padding: 16px; }
   .topbar .faint { display: none; }
