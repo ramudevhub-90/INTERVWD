@@ -22,6 +22,13 @@ def _time(iso: str, tz_offset_min: int) -> str:
     return t.strftime("%-I:%M %p").replace(":00 ", " ")
 
 
+def tz_of(svc: Service, s: Doc, given: int | None = None) -> int:
+    """The recruiter's time zone: what the web app sent, else what it last sent (Alexa sends none)."""
+    if given:
+        return given
+    return int((svc.store.get("recruiter", s["email"]) or {}).get("tzOffset", 0))
+
+
 def find_candidate(svc: Service, org_id: str, name: str) -> Doc:
     want = name.strip().lower()
     if not want:
@@ -60,6 +67,7 @@ def list_jobs(svc: Service, s: Doc) -> Doc:
 def get_todays_interviews(svc: Service, s: Doc, tz_offset_min: int = 0) -> Doc:
     from .service import _same_day
 
+    tz_offset_min = tz_of(svc, s, tz_offset_min)
     now = datetime.now(timezone.utc)
     today = [iv for iv in svc.interviews(s["orgId"]) if _same_day(iv["slotStart"], now, tz_offset_min)]
     names = {c["id"]: c["name"] for c in svc.all_candidates(s["orgId"])}
@@ -200,8 +208,12 @@ def briefing(svc: Service, s: Doc, tz_offset_min: int = 0) -> Doc:
     Remembers when they last heard it, so "what's new?" only tells them news."""
     from .engine import now
 
+    from datetime import timedelta
+
+    tz_offset_min = tz_of(svc, s, tz_offset_min)
     key = f"{s['orgId']}#{s['email']}"
-    seen = (svc.store.get("briefing", key) or {}).get("at", "")
+    # First briefing: the last 24 hours. After that: since they last heard it.
+    seen = (svc.store.get("briefing", key) or {}).get("at") or (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat().replace("+00:00", "Z")
     names = {c["id"]: c for c in svc.all_candidates(s["orgId"])}
     ivs = svc.interviews(s["orgId"])
     finished = sorted([iv for iv in ivs if iv.get("report") and (iv.get("endedAt") or "") > seen], key=lambda iv: -iv["report"]["overall"])
@@ -213,7 +225,7 @@ def briefing(svc: Service, s: Doc, tz_offset_min: int = 0) -> Doc:
     if finished:
         top = finished[0]
         who = names.get(top["candidateId"], {}).get("name", "A candidate")
-        parts.append(f"{len(finished)} interview{'s' if len(finished) > 1 else ''} finished {'since you last asked' if seen else 'recently'}. "
+        parts.append(f"{len(finished)} interview{'s' if len(finished) > 1 else ''} finished {'since you last asked' if svc.store.get('briefing', key) else 'in the last day'}. "
                      f"{who} scored highest, {top['report']['overall']}.")
     if pending:
         parts.append(f"{', '.join(pending)} {'is' if len(pending) == 1 else 'are'} waiting for you to approve their profile.")

@@ -199,6 +199,9 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
     async def dashboard(request: Request, s: Doc) -> Doc:
         if s["email"] == DEMO_EMAIL:
             seed.ensure_demo(svc)
+        recruiter = store.get("recruiter", s["email"]) or {}
+        if recruiter and recruiter.get("tzOffset") != tz(request):  # remembered for Alexa+, which sends no time zone
+            store.put("recruiter", s["email"], {**recruiter, "tzOffset": tz(request)})
         return svc.dashboard(s["orgId"], tz(request))
 
     @route("/api/jobs", ["POST"], recruiter=True)
