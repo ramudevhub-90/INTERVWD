@@ -44,7 +44,7 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
   const answerRef = useRef('');
   const typedDone = useRef<(text: string) => void>();
   const teamVideo = useRef<HTMLVideoElement>(null);
-  const live = useLive(id, phase === 'interview', teamVideo);
+  const live = useLive(id, phase === 'interview', teamVideo, stream);
   const takenRef = useRef<string | null>(null);
   takenRef.current = live.takenOverBy;
   const [typed, setTyped] = useState('');

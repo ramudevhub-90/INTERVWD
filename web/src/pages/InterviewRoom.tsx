@@ -30,7 +30,7 @@ export function InterviewRoom() {
   const [err, setErr] = useState<string>();
   const [check, setCheck] = useState<VerifyResult & { busy?: boolean }>();
   const teamVideo = useRef<HTMLVideoElement>(null);
-  const live = useLive(id, stage === 'live', teamVideo);
+  const live = useLive(id, stage === 'live', teamVideo, stream);
   // Like a phone video call: the team member large, you small in the corner; tap the small one to swap.
   const [selfBig, setSelfBig] = useState(false);
   const duo = live.teamOnCamera;
@@ -315,6 +315,7 @@ export function InterviewRoom() {
             <video ref={teamVideo} autoPlay playsInline className={!duo ? 'hidden' : selfBig ? 'pip' : ''} onClick={() => selfBig && setSelfBig(false)} />
             {stream ? <video ref={video} autoPlay muted playsInline className={`self ${duo && !selfBig ? 'pip' : ''}`} onClick={() => duo && !selfBig && setSelfBig(true)} /> : <div className="stack" style={{ alignItems: 'center', gap: 8 }}><Icon name="camera" size={32} /><span className="small">{mediaError ?? 'Starting camera…'}</span></div>}
             {duo ? <span className="tag badge badge-warning">{live.takenOverBy ?? live.watchers[0] ?? 'The team'} · on the call</span>
+              : live.takenOverBy ? <span className="tag badge badge-warning"><Icon name="mic" size={13} /> {live.takenOverBy} is on the call</span>
               : stream && <span className="tag badge badge-success"><Icon name="camera" size={13} /> Camera on</span>}
           </div>
           <div className="card card-flat" style={{ padding: '14px 16px' }}>

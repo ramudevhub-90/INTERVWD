@@ -12,7 +12,9 @@ export interface LiveState {
   resumed: number;
 }
 
-export function useLive(interviewId: string, active: boolean, teamVideo?: React.RefObject<HTMLVideoElement>): LiveState & { teamOnCamera: boolean } {
+/** `stream` is the camera and mic the page already has open: the call reuses it, because iPhones
+ * only let a page capture the camera once at a time (a second capture fails or freezes the first). */
+export function useLive(interviewId: string, active: boolean, teamVideo?: React.RefObject<HTMLVideoElement>, stream?: MediaStream): LiveState & { teamOnCamera: boolean } {
   const [state, setState] = useState<LiveState>({ watchers: [], takenOverBy: null, resumed: 0 });
   const [teamOnCamera, setTeamOnCamera] = useState(false);
   const audio = useRef<HTMLAudioElement>();
@@ -22,6 +24,7 @@ export function useLive(interviewId: string, active: boolean, teamVideo?: React.
   useEffect(() => {
     if (!active || api.mode !== 'http') return;
     let stop: (() => void) | undefined;
+    const own = stream?.getVideoTracks().some((t) => t.readyState === 'live') ? stream : undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -34,12 +37,18 @@ export function useLive(interviewId: string, active: boolean, teamVideo?: React.
         // Each device on its own: a busy camera still lets the team hear the candidate, and the reverse.
         let camOn = false;
         try {
-          const mics = await av.listAudioInputDevices();
-          if (mics[0]) await av.startAudioInput(mics[0].deviceId);
+          if (own?.getAudioTracks().length) await av.startAudioInput(new MediaStream(own.getAudioTracks()));
+          else {
+            const mics = await av.listAudioInputDevices();
+            if (mics[0]) await av.startAudioInput(mics[0].deviceId);
+          }
         } catch { /* no microphone */ }
         try {
-          const cams = await av.listVideoInputDevices();
-          if (cams[0]) { await av.startVideoInput(cams[0].deviceId); camOn = true; }
+          if (own) { await av.startVideoInput(new MediaStream(own.getVideoTracks())); camOn = true; }
+          else {
+            const cams = await av.listVideoInputDevices();
+            if (cams[0]) { await av.startVideoInput(cams[0].deviceId); camOn = true; }
+          }
         } catch { /* no camera */ }
         // The team member's voice: an <audio> element in the page (some browsers won't play a detached one).
         if (!audio.current) {
@@ -53,7 +62,12 @@ export function useLive(interviewId: string, active: boolean, teamVideo?: React.
         av.addObserver({
           videoTileDidUpdate: (tile) => {
             if (tile.localTile || !tile.boundAttendeeId || tile.tileId == null || tile.isContent) return;
-            if (teamVideo?.current) av.bindVideoElement(tile.tileId, teamVideo.current);
+            const el = teamVideo?.current;
+            if (el) {
+              el.muted = true; // the voice comes through the audio element; muted video may autoplay on iPhones
+              av.bindVideoElement(tile.tileId, el);
+              el.play().catch(() => undefined);
+            }
             setTeamOnCamera(true);
           },
           videoTileWasRemoved: () => setTeamOnCamera(false),
@@ -65,8 +79,11 @@ export function useLive(interviewId: string, active: boolean, teamVideo?: React.
           audio.current = undefined;
           av.stopLocalVideoTile();
           av.stop();
-          av.stopVideoInput().catch(() => undefined);
-          av.stopAudioInput().catch(() => undefined);
+          // Leave the page's own camera running: only stop what the call opened itself.
+          if (!own) {
+            av.stopVideoInput().catch(() => undefined);
+            av.stopAudioInput().catch(() => undefined);
+          }
         };
       } catch {
         /* live watching is optional; the interview carries on without it */
@@ -76,7 +93,7 @@ export function useLive(interviewId: string, active: boolean, teamVideo?: React.
       cancelled = true;
       stop?.();
     };
-  }, [interviewId, active]);
+  }, [interviewId, active, !!stream]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Who's watching, and whether someone has taken over.
   useEffect(() => {
