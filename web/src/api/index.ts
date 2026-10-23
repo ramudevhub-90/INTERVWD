@@ -16,6 +16,7 @@ import type {
   NewJob,
   NewKnowledge,
   NewRound,
+  OrgSettings,
   Round,
   Session,
 } from './types';
@@ -35,6 +36,8 @@ export interface Api {
 
   // Recruiter
   dashboard(): Promise<DashboardView>;
+  settings(): Promise<OrgSettings>;
+  saveSettings(slug: string): Promise<OrgSettings>;
   createJob(input: NewJob): Promise<string>;
   job(jobId: string): Promise<JobView>;
   createRound(jobId: string, input: NewRound): Promise<Round>;

@@ -24,6 +24,7 @@ export function Shell() {
         <NavLink to="/app" end className="nav-link"><Icon name="home" /><span>Dashboard</span></NavLink>
         <NavLink to="/app/jobs" className="nav-link"><Icon name="briefcase" /><span>Jobs</span></NavLink>
         <NavLink to="/app/alexa" className="nav-link"><Icon name="alexa" /><span>Alexa+</span></NavLink>
+        <NavLink to="/app/settings" className="nav-link"><Icon name="link" /><span>Settings</span></NavLink>
         <button className="nav-link btn-ghost" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }} onClick={signOut} title="Sign out">
           <Icon name="logout" /><span>Sign out</span>
         </button>

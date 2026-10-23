@@ -283,3 +283,9 @@ export interface KnowledgeView {
 }
 
 export type NewKnowledge = { kind: KnowledgeKind } & ({ file: File } | { name: string; text: string });
+
+export interface OrgSettings {
+  orgName: string;
+  slug: string; // the company's name in invite links: intervwd.com/<slug>/<round>
+  locked: boolean; // the demo company can't rename its links
+}

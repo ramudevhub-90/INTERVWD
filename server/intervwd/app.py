@@ -204,6 +204,14 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
             store.put("recruiter", s["email"], {**recruiter, "tzOffset": tz(request)})
         return svc.dashboard(s["orgId"], tz(request))
 
+    @route("/api/settings", ["GET"], recruiter=True)
+    async def settings(_: Request, s: Doc) -> Doc:
+        return svc.settings(s["orgId"])
+
+    @route("/api/settings", ["POST"], recruiter=True)
+    async def save_settings(request: Request, s: Doc) -> Doc:
+        return svc.change_slug(s["orgId"], str((await body(request)).get("slug", "")))
+
     @route("/api/jobs", ["POST"], recruiter=True)
     async def create_job(request: Request, s: Doc) -> Doc:
         d = await body(request)

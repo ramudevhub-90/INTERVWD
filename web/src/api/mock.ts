@@ -25,6 +25,7 @@ import type {
   NewKnowledge,
   NewRound,
   Org,
+  OrgSettings,
   Report,
   Round,
   Session,
@@ -262,6 +263,26 @@ export class MockApi implements Api {
       upcoming,
       awaiting,
     };
+  }
+
+  async settings(): Promise<OrgSettings> {
+    await pause();
+    const { orgId } = this.recruiter();
+    const org = this.find(this.db.orgs, orgId!, 'company');
+    return { orgName: org.name, slug: (org as Org & { slug?: string }).slug ?? org.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), locked: org.id === 'org_northwind' };
+  }
+
+  async saveSettings(slug: string): Promise<OrgSettings> {
+    await pause();
+    const { orgId } = this.recruiter();
+    if (orgId === 'org_northwind') throw new ApiError("The demo company's link name can't be changed.", 403);
+    if (!/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/.test(slug)) throw new ApiError('Use 3 to 40 lowercase letters, numbers and single hyphens.');
+    const org = this.find(this.db.orgs, orgId!, 'company') as Org & { slug?: string };
+    const old = org.slug ?? org.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    org.slug = slug;
+    for (const r of this.db.rounds.filter((x) => x.orgId === orgId && x.publicPath)) r.publicPath = r.publicPath!.replace(`${old}/`, `${slug}/`);
+    this.save();
+    return this.settings();
   }
 
   async createJob(input: NewJob) {

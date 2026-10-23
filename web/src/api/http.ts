@@ -91,6 +91,14 @@ export class HttpApi implements Api {
     return call<{ hint?: string }>('POST', '/orgs', input);
   }
 
+  settings() {
+    return call<import('./types').OrgSettings>('GET', '/settings');
+  }
+
+  saveSettings(slug: string) {
+    return call<import('./types').OrgSettings>('POST', '/settings', { slug });
+  }
+
   dashboard() {
     return call<import('./types').DashboardView>('GET', '/dashboard');
   }

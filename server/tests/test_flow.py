@@ -336,3 +336,26 @@ def test_links_carry_the_company_name(env):
     assert r["publicPath"] == "northwind-labs/qa-engineer-r1"
     assert client.get("/api/invites/northwind-labs~qa-engineer-r1").json()["round"]["id"] == r["id"]
     assert "northwind-labs/backend-engineer-r1" in client.post("/api/assistant", headers=h, json={"message": "share the backend invite link"}).json()["text"]
+
+
+def test_company_can_rename_its_links(env):
+    client, outbox = env
+    h = demo_login(client)
+    assert client.post("/api/settings", headers=h, json={"slug": "anything"}).status_code == 403  # demo is locked
+    client.post("/api/orgs", json={"orgName": "Acme Retail", "name": "Sam Lee", "email": "sam@acme.test"})
+    code = re.search(r"\b(\d{6})\b", outbox.sent[-1][2]).group(1)
+    ah = {"Authorization": f"Bearer {client.post('/api/auth/verify', json={'email': 'sam@acme.test', 'code': code}).json()['token']}"}
+    assert client.get("/api/settings", headers=ah).json()["slug"] == "acme-retail"
+    job = client.post("/api/jobs", headers=ah, json={"title": "Cashier", "location": "", "description": "Serve customers at our flagship store."}).json()["id"]
+    client.post(f"/api/jobs/{job}/rounds", headers=ah, json={"name": "Screen", "criteria": [{"name": "Service", "description": "x"}], "questions": ["a?", "b?"]})
+    for bad, status in (("ab", 400), ("Has Spaces", 400), ("app", 409), ("northwind-labs", 409), ("-acme", 400)):
+        assert client.post("/api/settings", headers=ah, json={"slug": bad}).status_code == status, bad
+    assert client.post("/api/settings", headers=ah, json={"slug": "acme"}).json()["slug"] == "acme"
+    assert client.get("/api/invites/acme~cashier-r1").status_code == 200
+    assert client.get("/api/invites/acme-retail~cashier-r1").status_code == 200  # old links keep working
+    assert client.get(f"/api/jobs/{job}", headers=ah).json()["rounds"][0]["publicPath"] == "acme/cashier-r1"
+    # The old name stays with Acme: another company can't take it.
+    client.post("/api/orgs", json={"orgName": "Other Co", "name": "Al Bo", "email": "al@other.test"})
+    code = re.search(r"\b(\d{6})\b", outbox.sent[-1][2]).group(1)
+    oh = {"Authorization": f"Bearer {client.post('/api/auth/verify', json={'email': 'al@other.test', 'code': code}).json()['token']}"}
+    assert client.post("/api/settings", headers=oh, json={"slug": "acme-retail"}).status_code == 409

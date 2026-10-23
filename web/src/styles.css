@@ -134,7 +134,7 @@ a.list-row:hover { background: var(--surface-2); }
 .crumbs { font-size: 13px; color: var(--text-3); margin-bottom: 6px; }
 .crumbs a { color: var(--text-3); }
 @media (max-width: 860px) {
-  .shell { grid-template-columns: minmax(0, 1fr); }
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; align-content: start; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--border); }
   .side .brand { margin: 0 auto 0 0; }
   .side .foot { display: none; }

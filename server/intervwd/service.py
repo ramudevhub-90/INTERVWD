@@ -120,6 +120,42 @@ class Service:
             self.store.put("org", org["id"], org)
         return org["slug"]
 
+    def settings(self, org_id: str) -> Doc:
+        org = self.org(org_id)
+        return {"orgName": org["name"], "slug": self.org_slug(org), "locked": org_id == "org_northwind"}
+
+    def change_slug(self, org_id: str, wanted: str) -> Doc:
+        """Renames the company's links. Old links keep working, and the old name stays reserved for this
+        company, so nobody else can take it and receive sign-ups from links already sent."""
+        org = self.org(org_id)
+        if org_id == "org_northwind":
+            raise Problem("The demo company's link name can't be changed.", 403)
+        slug = wanted.strip().lower()
+        if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])", slug) or "--" in slug:
+            raise Problem("Use 3 to 40 lowercase letters, numbers and single hyphens, starting and ending with a letter or number.")
+        if slug in RESERVED_SLUGS:
+            raise Problem("That name is used by Intervwd itself. Pick another.", 409)
+        old = self.org_slug(org)
+        if slug == old:
+            return self.settings(org_id)
+        owner = self.store.get("org-slug", slug)
+        if owner and owner["orgId"] != org_id:
+            raise Problem("Another company already uses that name. Pick another.", 409)
+        if not owner and not self.store.create("org-slug", slug, {"orgId": org_id}):
+            raise Problem("Another company already uses that name. Pick another.", 409)
+        for job in self.jobs(org_id):
+            for r in self.rounds(job["id"]):
+                if not r.get("publicPath"):
+                    continue
+                round_slug = r["publicPath"].split("/", 1)[1]
+                self.store.put("invite", f"{slug}~{round_slug}", {"roundId": r["id"]})  # old pointer stays too
+                r["publicPath"] = f"{slug}/{round_slug}"
+                self.save_round(r)
+        org["slug"] = slug
+        org.setdefault("previousSlugs", []).append(old)
+        self.store.put("org", org_id, org)
+        return self.settings(org_id)
+
     def invite_path(self, round: Doc) -> str:
         """The public link's path, e.g. northwind-labs/backend-engineer-r1."""
         return round.get("publicPath") or f"i/{round['inviteCode']}"
