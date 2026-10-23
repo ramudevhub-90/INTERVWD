@@ -218,12 +218,24 @@ export class IntervwdStack extends cdk.Stack {
       },
     });
 
-    new s3deploy.BucketDeployment(this, 'WebDeploy', {
-      sources: [s3deploy.Source.asset(path.join(__dirname, '..', '..', 'web', 'dist'))],
+    // Built files have content hashes in their names, so browsers can keep them for a year. index.html
+    // (and other unhashed files) must be checked every time, or browsers keep running an old version.
+    const webDist = path.join(__dirname, '..', '..', 'web', 'dist');
+    const assets = new s3deploy.BucketDeployment(this, 'WebAssets', {
+      sources: [s3deploy.Source.asset(webDist, { exclude: ['index.html', 'favicon.svg'] })],
       destinationBucket: site,
+      prune: false,
+      cacheControl: [s3deploy.CacheControl.fromString('public, max-age=31536000, immutable')],
+    });
+    const page = new s3deploy.BucketDeployment(this, 'WebDeploy', {
+      sources: [s3deploy.Source.asset(webDist, { exclude: ['assets/*'] })],
+      destinationBucket: site,
+      prune: false,
+      cacheControl: [s3deploy.CacheControl.fromString('no-cache')],
       distribution,
       distributionPaths: ['/*'],
     });
+    page.node.addDependency(assets); // new assets exist before the page that references them
 
     if (zone) {
       const target = route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(distribution));

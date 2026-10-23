@@ -102,7 +102,7 @@ export function AlexaSimulator() {
                 <Icon name={listening ? 'send' : 'mic'} />
               </button>
             )}
-            <input value={text} onChange={(e) => { setText(e.target.value); setErr(undefined); }} placeholder={listening ? 'Listening…' : 'Alexa, how did today\'s interviews go?'} aria-label="Message to Alexa" />
+            <input value={text} onChange={(e) => { if (listening) { listener.current?.stop(); setListening(false); } setText(e.target.value); setErr(undefined); }} placeholder={listening ? 'Listening…' : 'Alexa, how did today\'s interviews go?'} aria-label="Message to Alexa" />
             <button className="btn btn-primary" disabled={busy}>Send</button>
           </form>
           {err && <p className="error">{err}</p>}

@@ -107,8 +107,14 @@ def get_candidate_report(svc: Service, s: Doc, candidate_name: str) -> Doc:
     if not r:
         return {"say": f"{c['name']} hasn't finished an interview yet.", "candidate": c["name"], "status": c["status"]}
     best = max(r["criteria"], key=lambda x: x["score"])
+    ivs = [iv for iv in svc.interviews(s["orgId"]) if iv["candidateId"] == c["id"] and iv.get("report")]
+    triage = (ivs[-1].get("triage") if ivs else None) or {}
+    why = {"fast_track": "The AI fast-tracked them: ", "review": "The AI didn't fast-track them because it wasn't sure: ",
+           "below": "They were under the round's bar: "}.get(triage.get("band"), "")
+    because = (why + " ".join(triage.get("reasons", []))) if why else ""
     return {
-        "say": f"{c['name']} scored {r['overall']} out of 5, strongest on {best['name']}. {r['summary']}",
+        "say": f"{c['name']} scored {r['overall']} out of 5, strongest on {best['name']}. {r['summary']} {because}".strip(),
+        "triage": triage,
         "candidate": c["name"], "status": c["status"], "overall": r["overall"], "summary": r["summary"],
         "criteria": [{"name": x["name"], "score": x["score"], "evidence": x["evidence"]} for x in r["criteria"]],
         "concerns": r["concerns"],

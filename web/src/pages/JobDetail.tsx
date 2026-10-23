@@ -39,8 +39,8 @@ function RoundCard({ round, onChange }: { round: Round; onChange: (r: Round) => 
           <h2 className="row" style={{ gap: 8 }}>{round.name} <span className={`badge ${round.mode === 'human' ? 'badge-warning' : 'badge-accent'}`}>{round.mode === 'human' ? 'Person' : 'AI'}</span></h2>
           <p className="faint" style={{ marginTop: 4 }}>
             {round.mode === 'human'
-              ? <>Video call with {round.interviewers?.map((i) => i.name).join(', ') || 'a person'} · about {round.durationMin} minutes · scorecard · a person decides</>
-              : <>AI voice interview · about {round.durationMin} minutes · {round.questions.length} core questions with follow-ups ·{' '}
+              ? <>{round.location === 'office' ? 'In person at the office' : 'Video call'} with {round.interviewers?.map((i) => i.name).join(', ') || 'a person'} · about {round.durationMin} minutes · scorecard · a person decides</>
+              : <>AI voice interview{round.location === 'office' ? ' at the office (Echo Show rooms)' : ' online'} · about {round.durationMin} minutes · {round.questions.length} core questions with follow-ups ·{' '}
                 {round.decisionMode === 'auto' ? `AI fast-tracks clear passes (≥ ${round.autoAdvance?.minOverall.toFixed(1)})` : 'A person decides'}</>}
           </p>
         </div>

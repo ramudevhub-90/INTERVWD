@@ -160,6 +160,27 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
     }
   }, [data, hear, id, identity, say]);
 
+  // Snapshots during the interview, as in the browser room: the team can see who took it, and the
+  // server compares each with the profile photo when the identity check is on.
+  useEffect(() => {
+    if (phase !== 'interview') return;
+    const shot = () => {
+      const v = video.current;
+      if (!v || !v.videoWidth) return;
+      const c = document.createElement('canvas');
+      c.width = 320;
+      c.height = 240;
+      c.getContext('2d')!.drawImage(v, 0, 0, 320, 240);
+      c.toBlob((b) => b && api.snapshot(id, b).catch(() => undefined), 'image/jpeg', 0.7);
+    };
+    const first = setTimeout(shot, 5000);
+    const every = setInterval(shot, 90_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(every);
+    };
+  }, [phase, id]);
+
   // In an office room the candidate is already checked in: begin as soon as the camera is ready.
   const started = useRef(false);
   useEffect(() => {
