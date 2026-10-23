@@ -318,7 +318,7 @@ export class MockApi implements Api {
       id: id('round'), jobId, orgId: orgId!, index, name: `Round ${index} · ${input.name.trim()}`, durationMin: input.durationMin,
       criteria: input.criteria.map((c) => ({ id: id('c'), ...c })), questions: input.questions, inviteCode: `${slug}-r${index}-${Math.random().toString(36).slice(2, 6)}`, slots: [],
       identityCheck: input.identityCheck, requireApproval: input.requireApproval, publicPath: named,
-      decisionMode: input.decisionMode, autoAdvance: input.autoAdvance,
+      decisionMode: input.decisionMode, autoAdvance: input.autoAdvance, mode: input.mode, meetingUrl: input.meetingUrl, interviewers: input.interviewers,
     };
     this.db.rounds.push(round);
     this.save();
@@ -427,6 +427,24 @@ export class MockApi implements Api {
     this.save();
   }
 
+  async submitScorecard(interviewId: string, card: import('./types').Scorecard) {
+    await pause();
+    const s = this.recruiter();
+    const iv = this.find(this.db.interviews, interviewId, 'interview');
+    const round = this.find(this.db.rounds, iv.roundId, 'round');
+    const criteria = round.criteria.map((c) => {
+      const got = card.criteria.find((x) => x.criterionId === c.id);
+      return { criterionId: c.id, name: c.name, score: got?.score ?? 3, evidence: got?.notes || 'No notes.' };
+    });
+    iv.status = 'completed';
+    iv.endedAt = iso(new Date());
+    iv.report = { overall: Math.round((criteria.reduce((a, c) => a + c.score, 0) / criteria.length) * 10) / 10, summary: card.summary,
+      highlights: card.highlights.split('\n').filter(Boolean), concerns: card.concerns.split('\n').filter(Boolean), criteria, generatedAt: iso(new Date()),
+      scoredBy: 'human', scoredByName: s.name };
+    this.find(this.db.candidates, iv.candidateId, 'candidate').status = 'completed';
+    this.save();
+  }
+
   async verifyIdentity(interviewId: string): Promise<VerifyResult> {
     await pause(600);
     const iv = this.find(this.db.interviews, interviewId, 'interview');
@@ -517,7 +535,8 @@ export class MockApi implements Api {
     const org = this.find(this.db.orgs, round.orgId, 'company');
     return {
       orgName: org.name, job: this.find(this.db.jobs, round.jobId, 'job'),
-      round: { id: round.id, name: round.name, index: round.index, durationMin: round.durationMin, identityCheck: !!round.identityCheck, requireApproval: !!round.requireApproval },
+      round: { id: round.id, name: round.name, index: round.index, durationMin: round.durationMin, identityCheck: !!round.identityCheck, requireApproval: !!round.requireApproval,
+        mode: round.mode ?? 'ai', interviewers: (round.interviewers ?? []).map((i) => i.name), meetingUrl: round.meetingUrl },
       openSlots: round.slots.filter((s) => !s.candidateId && new Date(s.start) > new Date(Date.now() - 3600_000)),
     };
   }

@@ -32,7 +32,9 @@ export function NewRound() {
     name: TEMPLATES.screen.name, durationMin: 20, criteria: TEMPLATES.screen.criteria.map(([name, description]) => ({ name, description })),
     questions: [...TEMPLATES.screen.questions], identityCheck: true, requireApproval: true,
     decisionMode: 'human' as 'human' | 'auto', autoAdvance: { minOverall: 4.0, minEach: 3.0 },
+    mode: 'ai' as 'ai' | 'human', meetingUrl: '', interviewers: [{ name: '', email: '' }],
   }));
+  const human = form.mode === 'human';
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -52,9 +54,12 @@ export function NewRound() {
     if (!form.name.trim()) return setError('Name the round, for example "Technical interview".');
     if (criteria.length < 1) return setError('Add at least one thing to assess.');
     if (questions.length < 2) return setError('Add at least two questions.');
+    const interviewers = form.interviewers.filter((i) => i.name.trim());
+    if (human && !interviewers.length) return setError('Add the person who runs this round.');
+    if (human && form.meetingUrl.trim() && !/^https:\/\/\S+$/.test(form.meetingUrl.trim())) return setError('The meeting link must start with https://');
     setBusy(true);
     try {
-      await api.createRound(jobId, { ...form, criteria, questions });
+      await api.createRound(jobId, { ...form, criteria, questions, interviewers: form.interviewers.filter((i) => i.name.trim()), meetingUrl: form.meetingUrl.trim() });
       navigate(`/app/jobs/${jobId}?tab=rounds`);
     } catch (err) {
       setError((err as Error).message);
@@ -87,6 +92,38 @@ export function NewRound() {
         </div>
 
         <div className="card">
+          <h3 style={{ marginBottom: 10 }}>Who interviews</h3>
+          <div className="grid cols-2" style={{ gap: 10 }}>
+            {([
+              ['ai', 'AI voice interview', 'Nova interviews by voice, tailored to each CV, and scores it. Candidates take it any time in their slot.'],
+              ['human', 'A person, by video call', 'Someone from your team runs it on Meet, Zoom, Teams or Chime and fills in a scorecard.'],
+            ] as const).map(([m, label, hint]) => (
+              <label key={m} className="row" style={{ alignItems: 'flex-start', cursor: 'pointer', padding: '10px 12px', borderRadius: 'var(--radius)', border: `1px solid ${form.mode === m ? 'var(--accent)' : 'var(--border)'}` }}>
+                <input type="radio" name="mode" checked={form.mode === m} onChange={() => setForm({ ...form, mode: m })} style={{ width: 16, marginTop: 3 }} />
+                <span><span className="small" style={{ fontWeight: 600 }}>{label}</span><br /><span className="faint">{hint}</span></span>
+              </label>
+            ))}
+          </div>
+          {human && (
+            <div style={{ marginTop: 14 }}>
+              <label className="field"><span>Meeting link (optional)</span>
+                <input value={form.meetingUrl} onChange={(e) => setForm({ ...form, meetingUrl: e.target.value })} placeholder="https://meet.google.com/abc-defg-hij" />
+              </label>
+              <span className="small" style={{ fontWeight: 500, color: 'var(--text-2)' }}>Interviewers</span>
+              {form.interviewers.map((p, i) => (
+                <div key={i} className="row" style={{ marginTop: 8 }}>
+                  <input value={p.name} onChange={(e) => setForm({ ...form, interviewers: form.interviewers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} placeholder="Dana Lee" aria-label="Interviewer name" />
+                  <input type="email" value={p.email} onChange={(e) => setForm({ ...form, interviewers: form.interviewers.map((x, j) => (j === i ? { ...x, email: e.target.value } : x)) })} placeholder="dana@company.com" aria-label="Interviewer email" />
+                  <button type="button" className="btn btn-ghost" onClick={() => setForm({ ...form, interviewers: form.interviewers.filter((_, j) => j !== i) })} aria-label="Remove interviewer"><Icon name="x" /></button>
+                </div>
+              ))}
+              <button type="button" className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => setForm({ ...form, interviewers: [...form.interviewers, { name: '', email: '' }] })}><Icon name="plus" size={15} /> Add interviewer</button>
+              <p className="faint" style={{ marginTop: 8 }}>They're emailed each booking with the candidate's profile, earlier rounds and a scorecard link.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="card">
           <div className="card-head"><h3>What to assess</h3><span className="faint">Each is scored 1 to 5 with quoted evidence</span></div>
           {form.criteria.map((c, i) => (
             <div key={i} className="row" style={{ marginBottom: 10, alignItems: 'flex-start' }}>
@@ -99,7 +136,7 @@ export function NewRound() {
         </div>
 
         <div className="card">
-          <div className="card-head"><h3>Core questions</h3><span className="faint">The AI tailors them to each CV and adds follow-ups</span></div>
+          <div className="card-head"><h3>{human ? 'Interview guide' : 'Core questions'}</h3><span className="faint">{human ? 'Suggested questions for the interviewer' : 'The AI tailors them to each CV and adds follow-ups'}</span></div>
           {form.questions.map((q, i) => (
             <div key={i} className="row" style={{ marginBottom: 10, alignItems: 'flex-start' }}>
               <span className="faint" style={{ width: 18, marginTop: 10 }}>{i + 1}</span>
@@ -114,7 +151,7 @@ export function NewRound() {
           <h3 style={{ marginBottom: 10 }}>Who gets in</h3>
           {([
             ['requireApproval', 'Approve sign-ups first', 'People who sign up through the invite link wait for your approval before they get their interview link. Candidates you add yourself are approved already.'],
-            ['identityCheck', 'Identity check required', 'Candidates upload a face photo with their profile. Before the interview starts, a live camera check must match it (Amazon Rekognition). After 3 failed tries the interview is locked until you let them in. It never rejects anyone by itself.'],
+            ...(human ? [] : [['identityCheck', 'Identity check required', 'Candidates upload a face photo with their profile. Before the interview starts, a live camera check must match it (Amazon Rekognition). After 3 failed tries the interview is locked until you let them in. It never rejects anyone by itself.'] as const]),
           ] as const).map(([key, label, hint]) => (
             <label key={key} className="row" style={{ alignItems: 'flex-start', padding: '8px 0', cursor: 'pointer' }}>
               <input type="checkbox" checked={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.checked })} />
@@ -123,7 +160,7 @@ export function NewRound() {
           ))}
         </div>
 
-        <div className="card">
+        {!human && <div className="card">
           <h3 style={{ marginBottom: 4 }}>Decisions</h3>
           <p className="faint" style={{ marginBottom: 10 }}>Who moves candidates to the next round after this one.</p>
           {([
@@ -149,7 +186,7 @@ export function NewRound() {
               </label>
             </div>
           )}
-        </div>
+        </div>}
 
         <div className="row">
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Create round'}</button>

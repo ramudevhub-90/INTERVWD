@@ -89,8 +89,17 @@ export function Invite() {
                 ? `${possessive(data.orgName)} team will review your profile. Once they approve it, we'll email your interview link to ${form.email.trim()}.`
                 : `We've emailed your interview link to ${form.email.trim()}. Use a quiet room, Chrome or Edge, and allow the camera and microphone.`}
             </p>
-            {booked.interviewId && <Link className="btn btn-primary btn-block" to={`/interview/${booked.interviewId}`}>Go to the interview room</Link>}
-            {booked.interviewId && <Link className="btn btn-block" style={{ marginTop: 8 }} to={`/echo/${booked.interviewId}`}><Icon name="alexa" /> Or interview with Alexa on Echo Show (preview)</Link>}
+            {booked.interviewId && data.round.mode === 'human' ? (
+              <>
+                <p className="small" style={{ marginBottom: 12 }}>A video call with {data.round.interviewers.join(', ') || 'the team'}.</p>
+                {data.round.meetingUrl && <a className="btn btn-primary btn-block" href={data.round.meetingUrl} target="_blank" rel="noreferrer">Open the video call link</a>}
+              </>
+            ) : booked.interviewId && (
+              <>
+                <Link className="btn btn-primary btn-block" to={`/interview/${booked.interviewId}`}>Go to the interview room</Link>
+                <Link className="btn btn-block" style={{ marginTop: 8 }} to={`/echo/${booked.interviewId}`}><Icon name="alexa" /> Or interview with Alexa on Echo Show (preview)</Link>
+              </>
+            )}
             {booked.interviewId && <p className="faint" style={{ marginTop: 10 }}>You can open the room early to test your camera{face ? ' and do the identity check' : ''}.</p>}
           </div>
         </div>
@@ -108,7 +117,7 @@ export function Invite() {
         <form className="card" style={{ width: '100%', maxWidth: 540 }} onSubmit={submit} noValidate>
           <p className="faint">{data.invited?.returning ? `Welcome back, ${data.invited.name.split(' ')[0]}. ${data.orgName} would like you to take the next round for` : data.invited ? `${data.orgName} invited you, ${data.invited.name.split(' ')[0]}, to interview for` : `${data.orgName} invited you to interview for`}</p>
           <h1 style={{ fontSize: 24, margin: '4px 0 6px' }}>{data.job.title}</h1>
-          <p className="muted small">{data.job.location} · {data.round.name} · about {data.round.durationMin} minutes, by voice with an AI interviewer</p>
+          <p className="muted small">{data.job.location} · {data.round.name} · about {data.round.durationMin} minutes, {data.round.mode === 'human' ? `a video call with ${data.round.interviewers.join(', ') || 'the team'}` : 'by voice with an AI interviewer'}</p>
           {(data.round.requireApproval || face) && (
             <div className="row wrap" style={{ gap: 6, marginTop: 10 }}>
               {data.round.requireApproval && <span className="badge">The team approves profiles first</span>}

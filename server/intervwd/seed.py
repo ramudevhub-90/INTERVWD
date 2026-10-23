@@ -92,6 +92,9 @@ def reset_demo(svc: Service) -> None:
              "identityCheck": rid in ("round_backend_1", "round_storeops_1"), "requireApproval": rid == "round_storeops_1",
              "publicPath": f"northwind-labs/{path}",
              "decisionMode": "auto" if rid == "round_backend_1" else "human", "autoAdvance": {"minOverall": 4.0, "minEach": 3.0},
+             # Backend: Round 1 by the AI, Round 2 a system design call with a person.
+             "mode": "human" if rid == "round_backend_2" else "ai",
+             "interviewers": [{"name": "Priya Sharma", "email": ""}] if rid == "round_backend_2" else [], "meetingUrl": "",
              "inviteCode": code, "slots": [{"id": f"{sid}_{tag}", "start": _at(h), **({"candidateId": c} if c else {})} for sid, h, c in slots]}
         svc.save_round(r)
         s.put("invite", code, {"roundId": rid})
@@ -107,7 +110,7 @@ def reset_demo(svc: Service) -> None:
                   "Describe a production bug you tracked down. How did you find the cause?",
                   "How do you decide between a relational database and a key-value store for a new feature?"],
                  "nw-backend-r1", [("s1", -4, "cand_ana"), ("s2", -3, "cand_rahul"), ("s3", 2, "cand_vikram"), ("s4", 24, None), ("s5", 25, None), ("s6", 50, None)])
-    round_("round_backend_2", "job_backend", 2, "Round 2 · System design deep dive",
+    round_("round_backend_2", "job_backend", 2, "Round 2 · System design with Priya",
            _crit("be2", ("Architecture", "Chooses fitting components and explains why"), ("Trade-offs", "Weighs cost, latency and complexity"), ("Communication", "Leads the discussion clearly")),
            ["Design an order-tracking service for a million daily orders. Start with the main pieces.", "Where would this design fail first, and how would you know?",
             "How would you roll out a breaking change to its API?"],

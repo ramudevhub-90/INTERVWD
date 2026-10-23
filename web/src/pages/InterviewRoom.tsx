@@ -4,7 +4,7 @@ import { api } from '../api';
 import type { InterviewStep, Turn, VerifyResult } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PublicTop } from '../components/Shell';
-import { Loading, possessive, useLoad } from '../lib/util';
+import { Loading, possessive, useLoad, when } from '../lib/util';
 import { canListen, listen, speak, stopSpeaking } from '../lib/speech';
 
 const SNAPSHOT_EVERY_MS = 90_000;
@@ -203,6 +203,27 @@ export function InterviewRoom() {
       {progress && stage === 'live' && <span className="badge badge-accent">Question {progress.question} of {progress.of}</span>}
     </div>
   );
+
+  if (data.mode === 'human') {
+    return (
+      <>
+        <PublicTop />
+        <div className="centered">
+          <div className="card narrow" style={{ textAlign: 'center' }}>
+            <div className="orb" style={{ margin: '0 auto 14px' }}><Icon name="users" size={24} /></div>
+            <h2>{data.round.name}</h2>
+            <p className="muted" style={{ margin: '8px 0' }}>{data.job.title} at {data.orgName}, with {data.interviewers?.join(', ') || 'the team'}</p>
+            {data.slotStart && <p style={{ fontWeight: 500 }}>{when(data.slotStart)}</p>}
+            {data.interview.status === 'completed'
+              ? <p className="muted small" style={{ marginTop: 12 }}>This interview is done. The team will email you about next steps.</p>
+              : data.meetingUrl
+                ? <a className="btn btn-primary btn-block" style={{ marginTop: 14 }} href={data.meetingUrl} target="_blank" rel="noreferrer">Join the video call</a>
+                : <p className="muted small" style={{ marginTop: 12 }}>The team will send you the video call link before the interview.</p>}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   if (stage === 'done') {
     return (

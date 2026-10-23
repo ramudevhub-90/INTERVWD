@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import type { InterviewStep } from '../api/types';
 import { Icon } from '../components/Icon';
@@ -152,6 +152,7 @@ export function EchoInterview() {
   }, [phase, data, stream, run]);
 
   if (!data) return <div className="centered"><div className="narrow"><Loading error={error} /></div></div>;
+  if (data.mode === 'human') return <Navigate to={`/interview/${id}`} replace />; // a video call with a person, not Alexa
 
   return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#05060c', padding: 16 }}>

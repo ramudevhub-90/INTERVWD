@@ -6,9 +6,72 @@ import { Icon } from '../components/Icon';
 import { PageHead } from '../components/Shell';
 import { Loading, ScoreBadge, StatusBadge, initials, useLoad, when } from '../lib/util';
 
-function InterviewReport({ interview, round }: { interview: Interview; round?: Round }) {
+function ScorecardForm({ interview, round, onDone }: { interview: Interview; round: Round; onDone: () => void }) {
+  const [scores, setScores] = useState<Record<string, { score: number; notes: string }>>(() => Object.fromEntries(round.criteria.map((c) => [c.id, { score: 0, notes: '' }])));
+  const [summary, setSummary] = useState('');
+  const [highlights, setHighlights] = useState('');
+  const [concerns, setConcerns] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string>();
+  const submit = async () => {
+    const missing = round.criteria.find((c) => !scores[c.id].score);
+    if (missing) return setErr(`Score ${missing.name} from 1 to 5.`);
+    if (summary.trim().length < 10) return setErr('Add a sentence or two summing up the interview.');
+    setBusy(true);
+    setErr(undefined);
+    try {
+      await api.submitScorecard(interview.id, { criteria: round.criteria.map((c) => ({ criterionId: c.id, ...scores[c.id] })), summary, highlights, concerns });
+      onDone();
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="stack" style={{ gap: 14, marginTop: 14 }}>
+      {round.criteria.map((c) => (
+        <div key={c.id}>
+          <div className="row between wrap">
+            <span className="small" style={{ fontWeight: 600 }}>{c.name} <span className="faint" style={{ fontWeight: 400 }}>· {c.description}</span></span>
+            <div className="row" style={{ gap: 4 }} role="radiogroup" aria-label={`${c.name} score`}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} type="button" className={`btn btn-sm ${scores[c.id].score === n ? 'btn-primary' : ''}`} style={{ width: 36, padding: 0 }}
+                  onClick={() => setScores({ ...scores, [c.id]: { ...scores[c.id], score: n } })}>{n}</button>
+              ))}
+            </div>
+          </div>
+          <textarea rows={2} style={{ minHeight: 0, marginTop: 6 }} placeholder="Evidence: what they said or did" value={scores[c.id].notes}
+            onChange={(e) => setScores({ ...scores, [c.id]: { ...scores[c.id], notes: e.target.value } })} />
+        </div>
+      ))}
+      <label className="field" style={{ marginBottom: 0 }}><span>Summary</span><textarea rows={2} style={{ minHeight: 0 }} value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="Two sentences for the team" /></label>
+      <div className="grid cols-2" style={{ gap: 12 }}>
+        <label className="field" style={{ marginBottom: 0 }}><span>Highlights (one per line)</span><textarea rows={2} style={{ minHeight: 0 }} value={highlights} onChange={(e) => setHighlights(e.target.value)} /></label>
+        <label className="field" style={{ marginBottom: 0 }}><span>Worth probing (one per line)</span><textarea rows={2} style={{ minHeight: 0 }} value={concerns} onChange={(e) => setConcerns(e.target.value)} /></label>
+      </div>
+      <button className="btn btn-primary" style={{ alignSelf: 'flex-start' }} disabled={busy} onClick={submit}>{busy ? 'Saving…' : 'Submit scorecard'}</button>
+      {err && <p className="error" style={{ marginTop: 0 }}>{err}</p>}
+    </div>
+  );
+}
+
+function InterviewReport({ interview, round, onChange }: { interview: Interview; round?: Round; onChange: () => void }) {
   const [showTranscript, setShowTranscript] = useState(false);
   const r = interview.report;
+  if (!r && round?.mode === 'human') {
+    return (
+      <div className="card">
+        <div className="card-head"><h2>{round.name}</h2><span className="badge">With {round.interviewers?.map((i) => i.name).join(', ') || 'a person'}</span></div>
+        <p className="muted small">Video call booked for {when(interview.slotStart)}{round.meetingUrl ? <> · <a href={round.meetingUrl} target="_blank" rel="noreferrer">meeting link</a></> : null}. After the call, the interviewer fills in this scorecard.</p>
+        {round.questions.length > 0 && (
+          <details style={{ marginTop: 10 }}><summary className="small" style={{ cursor: 'pointer' }}>Interview guide</summary>
+            <ol className="small muted" style={{ paddingLeft: 18 }}>{round.questions.map((q) => <li key={q}>{q}</li>)}</ol>
+          </details>
+        )}
+        <ScorecardForm interview={interview} round={round} onDone={onChange} />
+      </div>
+    );
+  }
   if (!r) {
     return (
       <div className="card">
@@ -26,6 +89,7 @@ function InterviewReport({ interview, round }: { interview: Interview; round?: R
         </div>
         <ScoreBadge score={r.overall} />
       </div>
+      <p className="faint" style={{ marginTop: -8, marginBottom: 10 }}>{r.scoredBy === 'human' ? `Scorecard by ${r.scoredByName ?? 'the interviewer'}` : r.scoredBy === 'rules' ? 'Scored by backup rules (Nova was unavailable)' : 'Scored by Amazon Nova'}</p>
       <p style={{ marginBottom: 18 }}>{r.summary}</p>
 
       <div className="stack" style={{ gap: 14 }}>
@@ -175,7 +239,7 @@ export function CandidateReport() {
 
       <div className="split">
         <div className="stack">
-          {[...interviews].reverse().map((iv) => <InterviewReport key={iv.id} interview={iv} round={rounds.find((r) => r.id === iv.roundId)} />)}
+          {[...interviews].reverse().map((iv) => <InterviewReport key={iv.id} interview={iv} round={rounds.find((r) => r.id === iv.roundId)} onChange={reload} />)}
         </div>
 
         <div className="stack">

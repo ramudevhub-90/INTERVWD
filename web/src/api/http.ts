@@ -167,6 +167,10 @@ export class HttpApi implements Api {
     await call('POST', `/candidates/${encodeURIComponent(candidateId)}/identity/approve`);
   }
 
+  async submitScorecard(interviewId: string, card: import('./types').Scorecard) {
+    await call('POST', `/interviews/${encodeURIComponent(interviewId)}/scorecard`, card);
+  }
+
   verifyIdentity(interviewId: string, image: Blob) {
     const form = new FormData();
     form.set('image', image, 'live.jpg');

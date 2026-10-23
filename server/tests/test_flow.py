@@ -437,3 +437,55 @@ def test_human_mode_never_auto_advances():
         h = demo_login(client)
         svc, iv, _ = run_interview(client, h, decision_mode="human")
         assert iv["triage"]["band"] == "fast_track" and svc.store.get("candidate", iv["candidateId"])["status"] == "completed"
+
+
+def test_ai_then_human_round(env):
+    client, outbox = env
+    h = demo_login(client)
+    svc = client.app.state.svc
+    job = client.post("/api/jobs", headers=h, json={"title": "Product Designer", "location": "", "description": "Design our hiring tools end to end."}).json()["id"]
+    crit = [{"name": "Craft", "description": "Quality of design work"}, {"name": "Collaboration", "description": "Works well with others"}]
+    ai = client.post(f"/api/jobs/{job}/rounds", headers=h, json={"name": "Screen", "criteria": crit, "questions": ["a?", "b?"],
+                                                               "identityCheck": False, "requireApproval": False}).json()
+    bad = client.post(f"/api/jobs/{job}/rounds", headers=h, json={"name": "Portfolio", "mode": "human", "criteria": crit, "questions": ["a?", "b?"]})
+    assert bad.status_code == 400  # a person-run round needs an interviewer
+    human = client.post(f"/api/jobs/{job}/rounds", headers=h, json={
+        "name": "Portfolio review", "mode": "human", "criteria": crit, "questions": ["Walk me through a project.", "What would you change?"],
+        "meetingUrl": "https://meet.example.com/abc", "interviewers": [{"name": "Dana Lee", "email": "dana@northwind.test"}], "decisionMode": "auto"}).json()
+    assert human["mode"] == "human" and human["decisionMode"] == "human" and not human["identityCheck"]  # people decide person-run rounds
+
+    # Round 1 with the AI.
+    iv1 = book(client, ai["publicPath"].replace("/", "~"), open_slot(client, h, ai["id"]), photo=False).json()["interviewId"]
+    client.post(f"/api/interviews/{iv1}/start")
+    for _ in range(6):
+        if client.post(f"/api/interviews/{iv1}/answer", json={"text": "I research users, sketch, test with five people and iterate weekly with engineers."}).json()["done"]:
+            break
+    cid = svc.store.get("interview", iv1)["candidateId"]
+    client.post(f"/api/candidates/{cid}/decision", headers=h, json={"action": "advance", "note": ""})
+    link = next(m[2] for m in outbox.sent if "you're through" in m[1]).split("filled in): ")[1].split()[0]
+    token = link.split("t=")[1]
+
+    # Round 2 with a person: same profile, meeting link by email, the AI room refuses it.
+    open_slot(client, h, human["id"])
+    inv = client.get(f"/api/invites/{human['publicPath'].replace('/', '~')}?t={token}").json()
+    assert inv["invited"]["returning"]
+    r = client.post(f"/api/invites/{human['publicPath'].replace('/', '~')}/join", data={"name": "Kiran Rao", "email": "kiran@example.com", "slotId": inv["openSlots"][-1]["id"],
+                    "consent": "true", "t": token})
+    assert r.status_code == 200, r.text
+    iv2 = r.json()["interviewId"]
+    assert any("meet.example.com/abc" in m[2] for m in outbox.sent if m[0] == "kiran@example.com")
+    assert any(m[0] == "dana@northwind.test" and f"/app/candidates/{cid}" in m[2] for m in outbox.sent)
+    room = client.get(f"/api/interviews/{iv2}").json()
+    assert room["mode"] == "human" and room["interviewers"] == ["Dana Lee"]
+    assert client.post(f"/api/interviews/{iv2}/start").status_code == 409
+
+    # The interviewer's scorecard becomes the round's report.
+    crit_ids = [c["id"] for c in human["criteria"]]
+    assert client.post(f"/api/interviews/{iv2}/scorecard", headers=h, json={"criteria": [{"criterionId": crit_ids[0], "score": 9}], "summary": "x"}).status_code == 400
+    rep = client.post(f"/api/interviews/{iv2}/scorecard", headers=h, json={
+        "criteria": [{"criterionId": crit_ids[0], "score": 4.5, "notes": "Strong case study"}, {"criterionId": crit_ids[1], "score": 4, "notes": "Good with engineers"}],
+        "summary": "Clear thinker with a strong portfolio.", "highlights": "Great case study\nAsks good questions", "concerns": ""}).json()
+    assert rep["overall"] == 4.2 and rep["scoredBy"] == "human"
+    view = client.get(f"/api/candidates/{cid}", headers=h).json()
+    assert view["candidate"]["status"] == "completed" and len(view["interviews"]) == 2
+    assert client.post(f"/api/interviews/{iv1}/scorecard", headers=h, json={}).status_code == 409  # AI rounds score themselves

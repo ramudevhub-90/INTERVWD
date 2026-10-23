@@ -18,6 +18,7 @@ import type {
   NewRound,
   OrgSettings,
   Round,
+  Scorecard,
   Session,
 } from './types';
 import { MockApi } from './mock';
@@ -51,6 +52,7 @@ export interface Api {
   addCandidate(jobId: string, input: NewCandidate): Promise<{ id: string; link: string }>;
   reviewSignup(candidateId: string, approve: boolean): Promise<void>;
   approveIdentity(candidateId: string): Promise<void>;
+  submitScorecard(interviewId: string, card: Scorecard): Promise<void>;
   assistant(message: string): Promise<AssistantReply>;
 
   // Candidate

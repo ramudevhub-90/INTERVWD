@@ -59,6 +59,10 @@ def slugify(text: str, limit: int = 40) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:limit].strip("-") or "company"
 
 
+def round_score(n: float) -> float:
+    return round(min(5.0, max(1.0, float(n))), 1)
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(5)}"
 
@@ -278,6 +282,16 @@ class Service:
             raise Problem("Add at least one thing to assess.")
         if len(questions) < 2:
             raise Problem("Add at least two questions.")
+        meeting_url = str(body.get("meetingUrl") or "").strip()[:500]
+        interviewers = [{"name": str(i.get("name", "")).strip()[:120], "email": str(i.get("email", "")).strip().lower()[:200]}
+                        for i in (body.get("interviewers") or []) if str(i.get("name", "")).strip()][:5]
+        if body.get("mode") == "human":
+            if meeting_url and not re.fullmatch(r"https://\S+", meeting_url):
+                raise Problem("The meeting link must start with https://")
+            if not interviewers:
+                raise Problem("Add at least one interviewer for a round run by a person.")
+            if any(i["email"] and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", i["email"]) for i in interviewers):
+                raise Problem("Check the interviewers' email addresses.")
         index = len(self.rounds(job_id)) + 1
         slug = re.sub(r"[^a-z0-9]+", "-", job["title"].lower()).strip("-")[:16]
         code = f"{slug}-r{index}-{secrets.token_hex(3)}"
@@ -289,9 +303,14 @@ class Service:
             round_slug = f"{slugify(job['title'], 48)}-{n}-r{index}"
         round = {"id": new_id("round"), "jobId": job_id, "orgId": org_id, "index": index, "name": f"Round {index} · {name[:60]}",
                  "durationMin": int(body.get("durationMin") or 20), "criteria": criteria, "questions": questions, "inviteCode": code, "slots": [],
-                 "identityCheck": bool(body.get("identityCheck", True)), "requireApproval": bool(body.get("requireApproval", True)),
+                 "identityCheck": bool(body.get("identityCheck", True)) and body.get("mode") != "human",
+                 "requireApproval": bool(body.get("requireApproval", True)),
                  "publicPath": f"{org_slug}/{round_slug}",
-                 "decisionMode": "auto" if body.get("decisionMode") == "auto" else "human",
+                 # Who interviews: the AI by voice, or a person over a video call with a scorecard.
+                 "mode": "human" if body.get("mode") == "human" else "ai",
+                 "meetingUrl": meeting_url,
+                 "interviewers": interviewers,
+                 "decisionMode": "auto" if body.get("decisionMode") == "auto" and body.get("mode") != "human" else "human",
                  "autoAdvance": {"minOverall": min(5.0, max(1.0, float((body.get("autoAdvance") or {}).get("minOverall", 4.0)))),
                                  "minEach": min(5.0, max(1.0, float((body.get("autoAdvance") or {}).get("minEach", 3.0))))}}
         self.save_round(round)
@@ -477,7 +496,8 @@ class Service:
         return {
             "orgName": self.org(round["orgId"])["name"],
             "job": self._get("job", round["jobId"], "job"),
-            "round": {k: round.get(k) for k in ("id", "name", "index", "durationMin", "publicPath")}
+            "round": {k: round.get(k) for k in ("id", "name", "index", "durationMin", "publicPath", "meetingUrl")}
+            | {"mode": round.get("mode", "ai"), "interviewers": [i["name"] for i in round.get("interviewers", [])]}
             | {"identityCheck": bool(round.get("identityCheck")), "requireApproval": bool(round.get("requireApproval")) and not invited},
             "openSlots": [s for s in round["slots"] if not s.get("candidateId") and _parse(s["start"]).timestamp() > cutoff],
             **({"invited": {"name": invited["name"], "email": invited["email"], "hasCv": bool(invited.get("cvKey")),
@@ -581,6 +601,20 @@ class Service:
 
     def _email_interview_link(self, c: Doc, iv: Doc, job: Doc, round: Doc) -> None:
         org = self.org(c["orgId"])
+        when = iv["slotStart"].replace("T", " ")[:16] + " UTC"
+        if round.get("mode") == "human":
+            names = ", ".join(i["name"] for i in round.get("interviewers", [])) or f"the {org['name']} team"
+            where = round.get("meetingUrl") or "a video call; the team will send the link"
+            self._email(c["email"], f"Your {org['name']} interview is booked",
+                        f"Hi {c['name'].split()[0]},\n\nYour interview for {job['title']} ({round['name']}) is with {names}, on {when}.\n\n"
+                        f"Join here: {where}\n\nIntervwd, on behalf of {org['name']}")
+            for person in round.get("interviewers", []):
+                if person.get("email"):
+                    self._email(person["email"], f"Interview: {c['name']} for {job['title']}, {when}",
+                                f"Hi {person['name'].split()[0]},\n\nYou're interviewing {c['name']} for {job['title']} ({round['name']}) on {when}.\n"
+                                f"Meeting: {where}\n\nTheir profile, earlier rounds and your scorecard: {self.app_url}/app/candidates/{c['id']}\n\n"
+                                f"Intervwd")
+            return
         check = " You'll be asked to look at the camera for a quick identity check first." if round.get("identityCheck") else ""
         self._email(c["email"], f"Your {org['name']} interview is booked",
                     f"Hi {c['name'].split()[0]},\n\nYour interview for {job['title']} ({round['name']}) is booked for {iv['slotStart'].replace('T', ' ')[:16]} UTC.\n\n"
@@ -684,6 +718,9 @@ class Service:
         return {"interview": public, "candidateName": c["name"], "orgName": org["name"], "job": {"id": job["id"], "title": job["title"]},
                 "round": {k: round[k] for k in ("id", "name", "durationMin", "questions")},
                 "candidateStatus": c["status"],
+                "mode": round.get("mode", "ai"),
+                **({"meetingUrl": round.get("meetingUrl"), "interviewers": [i["name"] for i in round.get("interviewers", [])],
+                    "slotStart": iv["slotStart"]} if round.get("mode") == "human" else {}),
                 "identity": {"required": bool(round.get("identityCheck")), "status": ident.get("status", "pending"),
                              "attemptsLeft": max(0, 3 - int(ident.get("attempts", 0)))}}
 
@@ -691,6 +728,8 @@ class Service:
         iv, round, c, job, org = self._ctx(interview_id)
         if iv["status"] == "completed":
             raise Problem("This interview has already finished.", 409)
+        if round.get("mode") == "human":
+            raise Problem("This round is a video call with a person. Use the meeting link in your email.", 409)
         if c["status"] == "pending_approval":
             raise Problem(f"{org['name']} hasn't approved your profile yet. We'll email you when they do.", 403)
         if c["status"] == "declined":
@@ -727,6 +766,40 @@ class Service:
         if done and round.get("decisionMode") == "auto" and iv["triage"]["band"] == "fast_track":
             self.decide(iv["orgId"], c["id"], "advance", f"Moved on automatically. {iv['triage']['reasons'][0]}", "Intervwd (automatic)", automatic=True)
         return {"turns": turns, "done": done, "progress": engine.progress(iv, round)}
+
+    def submit_scorecard(self, org_id: str, interview_id: str, body: Doc, by: str) -> Doc:
+        """The interviewer's scorecard for a round run by a person. It becomes the round's report."""
+        iv = self._owned("interview", interview_id, org_id, "interview")
+        round = self._get("round", iv["roundId"], "round")
+        if round.get("mode") != "human":
+            raise Problem("Scorecards are for rounds run by a person. The AI scores its own interviews.", 409)
+        if iv["status"] == "completed":
+            raise Problem("A scorecard was already submitted for this interview.", 409)
+        given = {str(x.get("criterionId")): x for x in body.get("criteria", [])}
+        scores = []
+        for crit in round["criteria"]:
+            got = given.get(crit["id"])
+            try:
+                value = float((got or {}).get("score"))
+            except (TypeError, ValueError):
+                raise Problem(f"Score {crit['name']} from 1 to 5.") from None
+            if not 1 <= value <= 5:
+                raise Problem(f"Score {crit['name']} from 1 to 5.")
+            scores.append({"criterionId": crit["id"], "name": crit["name"], "score": round_score(value), "evidence": str(got.get("notes", "")).strip()[:1000] or "No notes."})
+        summary = str(body.get("summary", "")).strip()[:1200]
+        if len(summary) < 10:
+            raise Problem("Add a sentence or two summing up the interview.")
+        iv.update(status="completed", startedAt=iv.get("startedAt") or iv["slotStart"], endedAt=engine.now())
+        iv["report"] = {"overall": round_score(sum(x["score"] for x in scores) / len(scores)), "summary": summary,
+                        "highlights": [h.strip()[:300] for h in str(body.get("highlights", "")).split("\n") if h.strip()][:5],
+                        "concerns": [h.strip()[:300] for h in str(body.get("concerns", "")).split("\n") if h.strip()][:5],
+                        "criteria": scores, "generatedAt": engine.now(), "scoredBy": "human", "scoredByName": by}
+        self.save_interview(iv)
+        c = self._get("candidate", iv["candidateId"], "candidate")
+        if c["status"] in ("scheduled", "in_progress"):
+            c["status"] = "completed"
+            self.save_candidate(c)
+        return iv["report"]
 
     def add_snapshot(self, interview_id: str, image: bytes, content_type: str) -> None:
         iv = self._get("interview", interview_id, "interview")

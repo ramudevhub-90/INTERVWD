@@ -311,6 +311,10 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
         data, kind = svc.face_image(c["orgId"], c["id"], request.path_params["which"])
         return Response(data, media_type=kind, headers={"Cache-Control": "private, no-store"})
 
+    @route("/api/interviews/{interview_id}/scorecard", ["POST"], recruiter=True)
+    async def scorecard(request: Request, s: Doc) -> Doc:
+        return svc.submit_scorecard(s["orgId"], request.path_params["interview_id"], await body(request), s["name"])
+
     @route("/api/candidates/{candidate_id}/decision", ["POST"], recruiter=True)
     async def decision(request: Request, s: Doc) -> Doc:
         d = await body(request)

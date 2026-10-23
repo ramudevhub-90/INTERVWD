@@ -53,6 +53,9 @@ export interface Round {
   publicPath?: string; // the invite link's path: <company>/<job>-r<round>, e.g. northwind-labs/backend-engineer-r1
   identityCheck?: boolean; // face must match the profile photo before the interview starts
   requireApproval?: boolean; // HR approves sign-ups before the interview link goes out
+  mode?: 'ai' | 'human'; // who interviews: the AI by voice, or a person over a video call with a scorecard
+  meetingUrl?: string; // person-run rounds: the video call link
+  interviewers?: { name: string; email: string }[];
   decisionMode?: 'human' | 'auto'; // auto: the AI fast-tracks clear, confident passes; everything else goes to a person
   autoAdvance?: { minOverall: number; minEach: number };
 }
@@ -112,7 +115,8 @@ export interface Report {
   concerns: string[];
   criteria: CriterionScore[];
   generatedAt: string;
-  scoredBy?: 'nova' | 'rules';
+  scoredBy?: 'nova' | 'rules' | 'human';
+  scoredByName?: string; // the interviewer, for person-run rounds
 }
 
 /** Where a finished interview goes: fast-tracked by the AI, or to a person (unsure, or below the bar). */
@@ -189,7 +193,9 @@ export interface JobView {
 export interface InviteView {
   orgName: string;
   job: Job;
-  round: Pick<Round, 'id' | 'name' | 'index' | 'durationMin' | 'publicPath'> & { identityCheck: boolean; requireApproval: boolean };
+  round: Pick<Round, 'id' | 'name' | 'index' | 'durationMin' | 'publicPath' | 'meetingUrl'> & {
+    identityCheck: boolean; requireApproval: boolean; mode: 'ai' | 'human'; interviewers: string[];
+  };
   openSlots: Slot[];
   invited?: { name: string; email: string; hasCv: boolean; hasPhoto?: boolean; returning?: boolean }; // on a personal link
 }
@@ -210,6 +216,10 @@ export interface InterviewRoomView {
   job: Pick<Job, 'id' | 'title'>;
   round: Pick<Round, 'id' | 'name' | 'durationMin' | 'questions'>;
   candidateStatus?: CandidateStatus;
+  mode?: 'ai' | 'human';
+  meetingUrl?: string | null;
+  interviewers?: string[];
+  slotStart?: string;
   identity?: { required: boolean; status: Identity['status']; attemptsLeft: number };
 }
 
@@ -251,6 +261,16 @@ export interface NewRound {
   requireApproval: boolean;
   decisionMode: 'human' | 'auto';
   autoAdvance: { minOverall: number; minEach: number };
+  mode: 'ai' | 'human';
+  meetingUrl: string;
+  interviewers: { name: string; email: string }[];
+}
+
+export interface Scorecard {
+  criteria: { criterionId: string; score: number; notes: string }[];
+  summary: string;
+  highlights: string; // one per line
+  concerns: string;
 }
 
 export interface JoinInput {
