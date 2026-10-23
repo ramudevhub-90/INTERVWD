@@ -477,6 +477,21 @@ export class MockApi implements Api {
     this.save();
   }
 
+  private practiceAt = 0;
+
+  async practiceStart() {
+    await pause(400);
+    this.practiceAt = 0;
+    return { intro: "Let's practise. These aren't the real questions, and nothing is shared.", question: 'Tell me about a time you learned a new tool quickly.', index: 1, of: 2, jobTitle: 'Backend Engineer', orgName: 'Northwind Labs' };
+  }
+
+  async practiceAnswer() {
+    await pause(500);
+    this.practiceAt += 1;
+    return { feedback: { strength: 'You answered directly.', improve: 'Add a number or outcome.', tip: 'Use Situation, Task, Action, Result.' },
+      question: this.practiceAt < 2 ? 'Describe a time you disagreed with a teammate.' : null, index: this.practiceAt + 1, of: 2 };
+  }
+
   async joinCall(): Promise<import('./types').CallJoin> {
     throw new ApiError('Video calls need the live server (Amazon Chime SDK).', 409);
   }

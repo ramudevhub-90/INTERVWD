@@ -23,6 +23,7 @@ import { InterviewRoom } from './pages/InterviewRoom';
 import { Connect } from './pages/Connect';
 import { EchoInterview } from './pages/EchoInterview';
 import { ReceptionKiosk, RoomKiosk } from './pages/Kiosk';
+import { Practice } from './pages/Practice';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -36,6 +37,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/interview/:id" element={<InterviewRoom />} />
           <Route path="/connect" element={<Connect />} />
           <Route path="/echo/:id" element={<EchoInterview />} />
+          <Route path="/practice/:id" element={<Practice />} />
           <Route path="/kiosk/:token" element={<ReceptionKiosk />} />
           <Route path="/kiosk/:token/room/:room" element={<RoomKiosk />} />
           <Route path="/call/:id" element={later(<CandidateCall />)} />

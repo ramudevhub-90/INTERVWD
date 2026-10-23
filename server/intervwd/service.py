@@ -60,6 +60,10 @@ def slugify(text: str, limit: int = 40) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:limit].strip("-") or "company"
 
 
+def possessive_name(name: str) -> str:
+    return f"{name}'" if name.endswith("s") else f"{name}'s"
+
+
 def round_score(n: float) -> float:
     return round(min(5.0, max(1.0, float(n))), 1)
 
@@ -679,6 +683,7 @@ class Service:
         self._email(c["email"], f"Your {org['name']} interview is booked",
                     f"Hi {c['name'].split()[0]},\n\nYour interview for {job['title']} ({round['name']}) is booked for {when}.\n\n"
                     f"Join here when you're ready (Chrome or Edge, in a quiet room):{check}\n{candidate_link}\n\n"
+                    f"Want to warm up first? Practise with Alexa (not shared with {org['name']}): {self.app_url}/practice/{iv['id']}\n\n"
                     f"The calendar invite is attached. This link is personal to you; don't share it.\n\nIntervwd, on behalf of {org['name']}", invite)
 
     def review_signup(self, org_id: str, candidate_id: str, approve: bool, by: str) -> Doc:
@@ -959,6 +964,40 @@ class Service:
         job = self._get("job", iv["jobId"], "job")
         return {"meeting": meeting, "attendee": attendee, "candidateName": c["name"], "jobTitle": job["title"], "roundName": round["name"],
                 "orgName": self.org(iv["orgId"])["name"], "interviewers": [i["name"] for i in round.get("interviewers", [])], "candidateId": c["id"]}
+
+    # ---------- Practice: rehearse with Alexa before the real interview ----------
+    # Kept apart from the interview: separate practice questions, coaching after each answer,
+    # never shown to the company, deleted after a day.
+
+    def _practice_ctx(self, interview_id: str) -> tuple[Doc, Doc, Doc, Doc]:
+        iv = self._get("interview", interview_id, "interview")
+        return iv, self._get("round", iv["roundId"], "round"), self._get("job", iv["jobId"], "job"), self._get("candidate", iv["candidateId"], "candidate")
+
+    def practice_start(self, interview_id: str) -> Doc:
+        iv, round, job, c = self._practice_ctx(interview_id)
+        questions = (self.store.get("practice-questions", round["id"]) or {}).get("questions")  # shared by everyone in the round, for a day
+        if not questions:
+            questions = engine.practice_questions(self.nova, round, job)
+            self.store.put("practice-questions", round["id"], {"questions": questions}, expires=int(datetime.now(timezone.utc).timestamp()) + 86400)
+        self.store.put("practice", interview_id, {"questions": questions, "index": 0, "answers": []}, expires=int(datetime.now(timezone.utc).timestamp()) + 86400)
+        org = self.org(iv["orgId"])
+        return {"intro": f"Hi {c['name'].split()[0]}. Let's practise for {possessive_name(org['name'])} {round['name'].split(' · ')[0]}. "
+                         f"These are practice questions, not the real ones, and nothing you say here is shared with {org['name']}. "
+                         "I'll give you quick feedback after each answer.",
+                "question": questions[0], "index": 1, "of": len(questions), "jobTitle": job["title"], "orgName": org["name"]}
+
+    def practice_answer(self, interview_id: str, text: str) -> Doc:
+        if not text.strip():
+            raise Problem("Say or type an answer first.")
+        doc = self.store.get("practice", interview_id)
+        if not doc:
+            raise Problem("Start a practice session first.", 409)
+        q = doc["questions"][doc["index"]]
+        feedback = engine.coach(self.nova, q, text)
+        doc["index"] += 1
+        self.store.put("practice", interview_id, doc, expires=int(datetime.now(timezone.utc).timestamp()) + 86400)
+        nxt = doc["questions"][doc["index"]] if doc["index"] < len(doc["questions"]) else None
+        return {"feedback": feedback, "question": nxt, "index": doc["index"] + 1, "of": len(doc["questions"])}
 
     def submit_scorecard(self, org_id: str, interview_id: str, body: Doc, by: str) -> Doc:
         """The interviewer's scorecard for a round run by a person. It becomes the round's report."""

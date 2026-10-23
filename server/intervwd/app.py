@@ -399,6 +399,14 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
             )
         return {"interviewId": out["interviewId"], "status": out["status"]}
 
+    @route("/api/practice/{interview_id}/start", ["POST"])
+    async def practice_start(request: Request) -> Doc:
+        return svc.practice_start(request.path_params["interview_id"])
+
+    @route("/api/practice/{interview_id}/answer", ["POST"])
+    async def practice_answer(request: Request) -> Doc:
+        return svc.practice_answer(request.path_params["interview_id"], str((await body(request)).get("text", "")))
+
     @route("/api/interviews/{interview_id}/verify", ["POST"])
     async def verify(request: Request) -> Doc:
         async with request.form(max_files=1, max_fields=2, max_part_size=2 * 1024 * 1024) as form:

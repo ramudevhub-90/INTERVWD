@@ -385,3 +385,59 @@ def triage(report: Doc, interview: Doc, round: Doc) -> Doc:
     if overall >= bar and min(scores, default=0) >= each:
         return {"band": "fast_track", "reasons": [f"Overall {overall} meets the bar of {bar}, every criterion at least {each}, and the AI is confident."], "rule": rule}
     return {"band": "below", "reasons": [f"Overall {overall} is under the bar of {bar}." if overall < bar else f"A criterion is under {each}."], "rule": rule}
+
+
+# ---------- Practice (candidates rehearse; nothing reaches the company) ----------
+
+PRACTICE_SCHEMA = {
+    "type": "object",
+    "properties": {"q1": {"type": "string"}, "q2": {"type": "string"}, "q3": {"type": "string"}},
+    "required": ["q1", "q2", "q3"],
+}
+
+COACH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "strength": {"type": "string", "description": "One specific thing the answer did well."},
+        "improve": {"type": "string", "description": "One specific way to make it stronger."},
+        "tip": {"type": "string", "description": "A short, practical tip, e.g. a structure to use."},
+    },
+    "required": ["strength", "improve", "tip"],
+}
+
+
+def practice_questions(nova: Nova, round: Doc, job: Doc) -> list[str]:
+    """Three practice questions on the round's criteria that are NOT the real questions."""
+    real = "\n".join(f"- {q}" for q in round["questions"])
+    result = nova.json(
+        "You write practice interview questions so candidates can rehearse. Assess the same skills as the real round, "
+        "but write completely different questions: never reuse, paraphrase or hint at the real questions. One spoken sentence each.",
+        f"Job: {job['title']}. {job['description']}\nSkills assessed: {', '.join(c['name'] + ' (' + c['description'] + ')' for c in round['criteria'])}\n"
+        f"Real questions, which you must NOT use or resemble:\n{real}",
+        PRACTICE_SCHEMA,
+        max_tokens=500,
+    )
+    got = [str((result or {}).get(k, "")).strip() for k in ("q1", "q2", "q3")]
+    lowered = [q.lower() for q in round["questions"]]
+    if all(10 < len(q) < 400 for q in got) and not any(q.lower() in lowered for q in got):
+        return got
+    crit = round["criteria"] or [{"name": "your experience", "description": ""}]
+    return [f"Tell me about a time you showed {crit[i % len(crit)]['name'].lower()} at work. What happened, and what was the result?" for i in range(3)]
+
+
+def coach(nova: Nova, question: str, answer: str) -> Doc:
+    result = nova.json(
+        "You are a friendly interview coach. Give honest, specific, encouraging feedback on one practice answer. "
+        "Each field one short spoken sentence. " + NEUTRAL,
+        f"Question: {question}\nAnswer: {answer[:3000]}",
+        COACH_SCHEMA,
+        max_tokens=300,
+    )
+    if result and all(result.get(k) for k in ("strength", "improve", "tip")):
+        return {k: str(result[k])[:300] for k in ("strength", "improve", "tip")}
+    words = len(answer.split())
+    return {
+        "strength": "You answered the question directly." if words >= 25 else "You kept it short and clear.",
+        "improve": "Add a concrete example with a number or outcome." if words < 60 else "Trim the background and get to your part sooner.",
+        "tip": "Try the STAR structure: Situation, Task, Action, Result.",
+    }

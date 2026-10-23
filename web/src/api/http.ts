@@ -199,6 +199,14 @@ export class HttpApi implements Api {
     await call('POST', `/interviews/${encodeURIComponent(interviewId)}/scorecard`, card);
   }
 
+  practiceStart(interviewId: string) {
+    return call<{ intro: string; question: string; index: number; of: number; jobTitle: string; orgName: string }>('POST', `/practice/${encodeURIComponent(interviewId)}/start`);
+  }
+
+  practiceAnswer(interviewId: string, text: string) {
+    return call<{ feedback: { strength: string; improve: string; tip: string }; question: string | null; index: number; of: number }>('POST', `/practice/${encodeURIComponent(interviewId)}/answer`, { text });
+  }
+
   joinCall(interviewId: string) {
     return call<import('./types').CallJoin>('POST', `/interviews/${encodeURIComponent(interviewId)}/call`);
   }

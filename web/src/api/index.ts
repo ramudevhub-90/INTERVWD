@@ -74,6 +74,8 @@ export interface Api {
   join(code: string, input: JoinInput): Promise<JoinResult>;
   verifyIdentity(interviewId: string, image: Blob): Promise<VerifyResult>;
   joinCall(interviewId: string): Promise<CallJoin>;
+  practiceStart(interviewId: string): Promise<{ intro: string; question: string; index: number; of: number; jobTitle: string; orgName: string }>;
+  practiceAnswer(interviewId: string, text: string): Promise<{ feedback: { strength: string; improve: string; tip: string }; question: string | null; index: number; of: number }>;
   room(interviewId: string): Promise<InterviewRoomView>;
   startInterview(interviewId: string): Promise<InterviewStep>;
   answer(interviewId: string, text: string): Promise<InterviewStep>;

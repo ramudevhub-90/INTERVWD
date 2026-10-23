@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
@@ -10,6 +10,37 @@ import { Loading, possessive, useLoad, when } from '../lib/util';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_CV = 5 * 1024 * 1024;
 const MAX_PHOTO = 5 * 1024 * 1024;
+
+/** Takes the identity-check photo with the webcam (laptops have no camera option in the file picker). */
+function SelfieCamera({ onPhoto, onClose }: { onPhoto: (f: File) => void; onClose: () => void }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [err, setErr] = useState<string>();
+  useEffect(() => {
+    let stream: MediaStream | undefined;
+    navigator.mediaDevices?.getUserMedia({ video: { width: 640, height: 480 } }).then((s) => {
+      stream = s;
+      if (video.current) video.current.srcObject = s;
+    }).catch(() => setErr('Allow the camera, or upload a photo instead.'));
+    return () => stream?.getTracks().forEach((t) => t.stop());
+  }, []);
+  const take = () => {
+    const v = video.current;
+    if (!v || !v.videoWidth) return;
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    c.getContext('2d')!.drawImage(v, 0, 0);
+    c.toBlob((b) => b && onPhoto(new File([b], 'selfie.jpg', { type: 'image/jpeg' })), 'image/jpeg', 0.92);
+  };
+  return (
+    <div className="stack" style={{ gap: 8, marginTop: 8 }}>
+      <video ref={video} autoPlay muted playsInline style={{ width: '100%', borderRadius: 10, background: '#000', transform: 'scaleX(-1)' }} />
+      {err && <p className="error" style={{ marginTop: 0 }}>{err}</p>}
+      <div className="row"><button type="button" className="btn btn-primary btn-sm" onClick={take}><Icon name="camera" size={15} /> Take photo</button><button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button></div>
+      <p className="faint">Face the light and look at the camera, like a passport photo.</p>
+    </div>
+  );
+}
 
 /** The candidate's profile: through the round's invite link, or the personal link HR sent (?t=…). */
 export function Invite() {
@@ -23,6 +54,7 @@ export function Invite() {
   const [cv, setCv] = useState<File>();
   const [photo, setPhoto] = useState<File>();
   const [preview, setPreview] = useState<string>();
+  const [selfie, setSelfie] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [busy, setBusy] = useState(false);
   const [booked, setBooked] = useState<JoinResult & { start: string }>();
@@ -102,6 +134,7 @@ export function Invite() {
                 <Link className="btn btn-block" style={{ marginTop: 8 }} to={`/echo/${booked.interviewId}`}><Icon name="alexa" /> Or interview with Alexa on Echo Show (preview)</Link>
               </>
             )}
+            {booked.interviewId && data.round.mode !== 'human' && <Link className="btn btn-block btn-ghost" style={{ marginTop: 8 }} to={`/practice/${booked.interviewId}`}><Icon name="sparkle" /> Practise first with Alexa (not shared)</Link>}
             {booked.interviewId && <p className="faint" style={{ marginTop: 10 }}>You can open the room early to test your camera{face ? ' and do the identity check' : ''}.</p>}
           </div>
         </div>
@@ -158,6 +191,9 @@ export function Invite() {
                 <span className="small" style={{ flex: 1 }}>{photo ? photo.name : 'A recent, clear photo of your face, looking at the camera'}</span>
                 <input type="file" accept="image/jpeg,image/png" capture="user" className="sr-only" onChange={(e) => { setPhoto(e.target.files?.[0]); clear('photo'); }} />
               </label>
+              {selfie
+                ? <SelfieCamera onPhoto={(f) => { setPhoto(f); setSelfie(false); clear('photo'); }} onClose={() => setSelfie(false)} />
+                : <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => setSelfie(true)}><Icon name="camera" size={15} /> Take a photo now</button>}
               {field('photo')}
             </div>
           )}

@@ -550,3 +550,22 @@ def test_hiring_day_at_the_office(env):
     job = client.post("/api/jobs", headers=oh, json={"title": "Cashier", "location": "", "description": "Serve customers at our store every day."}).json()["id"]
     r = client.post(f"/api/jobs/{job}/rounds", headers=oh, json={"name": "Walk-in", "location": "office", "criteria": [{"name": "x", "description": "y"}], "questions": ["a?", "b?"]})
     assert r.status_code == 409
+
+
+def test_practice_is_separate_from_the_real_interview(env):
+    client, _ = env
+    h = demo_login(client)
+    svc = client.app.state.svc
+    iv = "iv_demo_vikram"
+    start = client.post(f"/api/practice/{iv}/start").json()
+    real = svc.store.get("round", "round_backend_1")["questions"]
+    assert start["of"] == 3 and start["question"] not in real and "not the real ones" in start["intro"]
+    out = client.post(f"/api/practice/{iv}/answer", json={"text": "I fixed a slow API by adding an index."}).json()
+    assert set(out["feedback"]) == {"strength", "improve", "tip"} and out["question"]
+    for _ in range(2):
+        out = client.post(f"/api/practice/{iv}/answer", json={"text": "Another practice answer with an example."}).json()
+    assert out["question"] is None
+    # Practice never touches the real interview or the recruiter's view.
+    real_iv = svc.store.get("interview", iv)
+    assert real_iv["turns"] == [] and real_iv["status"] == "scheduled"
+    assert "practice" not in str(client.get("/api/candidates/cand_vikram", headers=h).json()).lower()
