@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import type { InterviewStep, Turn, VerifyResult } from '../api/types';
 import { Icon } from '../components/Icon';
@@ -239,6 +239,7 @@ export function InterviewRoom() {
           {stage === 'setup' ? (
             <>
               <div className="row"><div className="orb"><Icon name="mic" size={24} /></div><div><h3>Before you start</h3><p className="faint">About {data.round.durationMin} minutes · {data.round.questions.length} questions with follow-ups</p></div></div>
+              <Link className="btn btn-sm" to={`/echo/${id}`} style={{ alignSelf: 'flex-start' }}><Icon name="alexa" size={15} /> Try it on Echo Show (Alexa+ preview)</Link>
               <ul className="small muted" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8 }}>
                 <li>Find a quiet place and look at the camera.</li>
                 <li>The interviewer speaks each question. Answer out loud, then press <b>Finish answer</b>.</li>

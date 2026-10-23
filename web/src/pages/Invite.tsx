@@ -88,6 +88,7 @@ export function Invite() {
                 : `We've emailed your interview link to ${form.email.trim()}. Use a quiet room, Chrome or Edge, and allow the camera and microphone.`}
             </p>
             {booked.interviewId && <Link className="btn btn-primary btn-block" to={`/interview/${booked.interviewId}`}>Go to the interview room</Link>}
+            {booked.interviewId && <Link className="btn btn-block" style={{ marginTop: 8 }} to={`/echo/${booked.interviewId}`}><Icon name="alexa" /> Or interview with Alexa on Echo Show (preview)</Link>}
             {booked.interviewId && <p className="faint" style={{ marginTop: 10 }}>You can open the room early to test your camera{face ? ' and do the identity check' : ''}.</p>}
           </div>
         </div>

@@ -204,3 +204,22 @@ a.list-row:hover { background: var(--surface-2); }
 .split-wide { display: grid; gap: 16px; align-items: start; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
 .evidence { margin: 4px 0 0 182px; }
 @media (max-width: 860px) { .split, .split-wide { grid-template-columns: minmax(0, 1fr); } .evidence { margin-left: 0; } }
+
+/* ---------- Echo Show (candidate interview on Alexa+, simulated) ---------- */
+.echo-show { width: min(960px, 100%); }
+.echo-screen { position: relative; aspect-ratio: 16 / 10; background: radial-gradient(120% 90% at 30% 20%, #16244a 0%, #0a1024 55%, #060912 100%); border: 14px solid #15171f; border-radius: 22px; color: #f2f5ff; overflow: hidden; display: flex; flex-direction: column; }
+.echo-base { height: 26px; margin: 0 12%; background: #1d1f28; border-radius: 0 0 40px 40px; }
+.echo-top { display: flex; justify-content: space-between; padding: 14px 22px; font-size: 13px; color: #9fb0d8; }
+.echo-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 24px; align-items: center; padding: 0 28px 20px; }
+.echo-line { font-size: clamp(20px, 3vw, 32px); line-height: 1.3; font-weight: 500; letter-spacing: -0.01em; }
+.echo-heard { margin-top: 16px; font-size: 17px; color: #7fd4ff; }
+.echo-sub { margin-top: 12px; font-size: 14px; color: #9fb0d8; }
+.echo-cam { position: relative; aspect-ratio: 4 / 3; border-radius: 16px; overflow: hidden; background: #000; display: grid; place-items: center; color: #6c7aa0; transition: transform 0.3s; }
+.echo-cam.big { transform: scale(1.08); box-shadow: 0 0 0 3px #1fb5ff; }
+.echo-cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.echo-count { position: absolute; font-size: 64px; font-weight: 600; color: #fff; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
+.echo-frame { position: absolute; inset: 14% 24%; border: 2px dashed rgba(255, 255, 255, 0.7); border-radius: 50%; }
+.echo-bar { height: 6px; background: #1a2540; }
+.echo-bar.listening, .echo-bar.thinking, .echo-bar.speaking { background: linear-gradient(90deg, #1fb5ff, #7c5cff, #1fb5ff); background-size: 200% 100%; animation: slide 1.4s linear infinite; }
+.echo-bar.speaking { animation-duration: 0.8s; }
+@media (max-width: 700px) { .echo-body { grid-template-columns: minmax(0, 1fr); } .echo-screen { aspect-ratio: auto; min-height: 520px; } }
