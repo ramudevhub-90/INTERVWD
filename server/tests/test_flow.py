@@ -569,3 +569,13 @@ def test_practice_is_separate_from_the_real_interview(env):
     real_iv = svc.store.get("interview", iv)
     assert real_iv["turns"] == [] and real_iv["status"] == "scheduled"
     assert "practice" not in str(client.get("/api/candidates/cand_vikram", headers=h).json()).lower()
+
+
+def test_practice_questions_must_not_resemble_the_real_ones():
+    from intervwd.engine import too_close
+
+    real = ["How do you make an API safe to retry, for example so a payment is never charged twice?",
+            "Your service gets ten times the usual traffic during a sale. What breaks first, and what do you do?"]
+    assert too_close("How would you keep a payment API from charging twice when clients retry?", real)
+    assert too_close("During a flash sale traffic spikes ten times. What breaks first?", real)
+    assert not too_close("Tell me about a time you had to learn a new technology quickly for a project.", real)

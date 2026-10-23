@@ -406,29 +406,70 @@ COACH_SCHEMA = {
 }
 
 
-def practice_questions(nova: Nova, round: Doc, job: Doc) -> list[str]:
-    """Three practice questions on the round's criteria that are NOT the real questions."""
-    real = "\n".join(f"- {q}" for q in round["questions"])
+PRACTICE_OVERLAP = 0.25  # share of a practice question's key words also in a real question that counts as too close
+
+
+def _key_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]+", text.lower()) if len(w) > 3 and w not in STOP and w not in {"tell", "about", "time", "your", "would", "describe"}}
+
+
+def too_close(practice: str, real: list[str]) -> bool:
+    """True when a practice question shares too many key words with any real question."""
+    mine = _key_words(practice)
+    return not mine or any(len(mine & _key_words(r)) / len(mine) > PRACTICE_OVERLAP for r in real)
+
+
+SIMILAR_SCHEMA = {
+    "type": "object",
+    "properties": {"overlaps": {"type": "array", "items": {"type": "boolean"},
+                                "description": "One per practice question: true if it tests the same scenario or topic as any real question."}},
+    "required": ["overlaps"],
+}
+
+
+def same_meaning(nova: Nova, practice: list[str], real: list[str]) -> bool:
+    """Second check, by meaning rather than words: would practising this question help with a real one?"""
     result = nova.json(
-        "You write practice interview questions so candidates can rehearse. Assess the same skills as the real round, "
-        "but write completely different questions: never reuse, paraphrase or hint at the real questions. One spoken sentence each.",
-        f"Job: {job['title']}. {job['description']}\nSkills assessed: {', '.join(c['name'] + ' (' + c['description'] + ')' for c in round['criteria'])}\n"
-        f"Real questions, which you must NOT use or resemble:\n{real}",
-        PRACTICE_SCHEMA,
-        max_tokens=500,
+        "You check practice interview questions for leaks. A practice question leaks if it asks about the same scenario, problem or topic "
+        "as a real question, even in different words (for example 'avoid double-processing' and 'never charge a payment twice').",
+        "Real questions:\n" + "\n".join(f"- {q}" for q in real) + "\n\nPractice questions:\n" + "\n".join(f"{i + 1}. {q}" for i, q in enumerate(practice)),
+        SIMILAR_SCHEMA,
+        max_tokens=100,
     )
-    got = [str((result or {}).get(k, "")).strip() for k in ("q1", "q2", "q3")]
-    lowered = [q.lower() for q in round["questions"]]
-    if all(10 < len(q) < 400 for q in got) and not any(q.lower() in lowered for q in got):
-        return got
+    flags = (result or {}).get("overlaps")
+    return bool(flags) and any(bool(f) for f in flags)
+
+
+def practice_questions(nova: Nova, round: Doc, job: Doc) -> list[str]:
+    """Three practice questions on the round's skills that don't resemble the real questions, so
+    practising never gives anyone a head start. Checked in code, not just asked of the model."""
+    real_qs = round["questions"]
+    real = "\n".join(f"- {q}" for q in real_qs)
+    for _ in range(2):
+        result = nova.json(
+            "You write practice interview questions so candidates can rehearse. Assess the same skills as the real round, "
+            "but pick DIFFERENT scenarios and topics: never reuse, paraphrase or hint at the real questions, and avoid the situations they "
+            "describe (for example, if a real question is about retries or traffic spikes, don't ask about those). Prefer general, "
+            "behavioural questions. One spoken sentence each.",
+            f"Job: {job['title']}. {job['description']}\nSkills assessed: {', '.join(c['name'] + ' (' + c['description'] + ')' for c in round['criteria'])}\n"
+            f"Real questions, whose topics you must NOT use:\n{real}",
+            PRACTICE_SCHEMA,
+            max_tokens=500,
+        )
+        got = [str((result or {}).get(k, "")).strip() for k in ("q1", "q2", "q3")]
+        if all(10 < len(q) < 400 for q in got) and not any(too_close(q, real_qs) for q in got) and not same_meaning(nova, got, real_qs):
+            return got
+        if result is None:
+            break
+        log.info("Practice questions too close to the real ones; asking again")
     crit = round["criteria"] or [{"name": "your experience", "description": ""}]
     return [f"Tell me about a time you showed {crit[i % len(crit)]['name'].lower()} at work. What happened, and what was the result?" for i in range(3)]
 
 
 def coach(nova: Nova, question: str, answer: str) -> Doc:
     result = nova.json(
-        "You are a friendly interview coach. Give honest, specific, encouraging feedback on one practice answer. "
-        "Each field one short spoken sentence. " + NEUTRAL,
+        "You are a friendly interview coach talking to the candidate. Give honest, specific, encouraging feedback on their practice answer, "
+        "speaking directly to them as 'you' (never 'the candidate'). Each field one short spoken sentence.",
         f"Question: {question}\nAnswer: {answer[:3000]}",
         COACH_SCHEMA,
         max_tokens=300,
