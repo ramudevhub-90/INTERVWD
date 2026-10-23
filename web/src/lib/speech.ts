@@ -29,23 +29,65 @@ function voice(): SpeechSynthesisVoice | undefined {
   return en.find((v) => /Google UK English Female|Samantha|Microsoft (Aria|Jenny|Neerja)/i.test(v.name)) ?? en.find((v) => v.lang === 'en-IN') ?? en[0];
 }
 
-let audio: HTMLAudioElement | undefined;
+// iPhones (and some other browsers) only play sound that starts from a tap. Later questions start
+// when the candidate pauses, not from a tap, so: one audio element, unlocked on the first tap
+// anywhere, and reused for every line. If a browser still blocks it, the page offers a tap to listen.
+let player: HTMLAudioElement | undefined;
+let unlocked = false;
+let current: HTMLAudioElement | undefined;
+let lastBlocked = false;
+
+function silentWav(): string {
+  const n = 800; // 0.1 s at 8 kHz
+  const b = new DataView(new ArrayBuffer(44 + n));
+  const w = (o: number, t: string) => [...t].forEach((c, i) => b.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); b.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true);
+  b.setUint32(24, 8000, true); b.setUint32(28, 8000, true); b.setUint16(32, 1, true); b.setUint16(34, 8, true); w(36, 'data'); b.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) b.setUint8(44 + i, 128);
+  return URL.createObjectURL(new Blob([b.buffer], { type: 'audio/wav' }));
+}
+
+/** Call from a tap: lets later lines play without one. Safe to call often. */
+export function unlockAudio() {
+  player ??= Object.assign(new Audio(), { preload: 'auto' });
+  player.setAttribute('playsinline', '');
+  if (!unlocked) {
+    player.src = silentWav();
+    player.play().then(() => { unlocked = true; }).catch(() => undefined);
+    if (canSpeak) speechSynthesis.speak(Object.assign(new SpeechSynthesisUtterance(' '), { volume: 0 }));
+  }
+}
+
+if (typeof document !== 'undefined') {
+  const once = () => unlockAudio();
+  document.addEventListener('pointerdown', once, { capture: true });
+  document.addEventListener('keydown', once, { capture: true });
+}
+
+/** True when the last line couldn't play because the browser wanted a tap first. */
+export const audioBlocked = () => lastBlocked;
 
 /** Speaks with Amazon Polly when the server is live, else with the browser's voice. */
 export async function speak(text: string): Promise<void> {
   stopSpeaking();
+  lastBlocked = false;
   if (api instanceof HttpApi) {
     try {
       const url = URL.createObjectURL(await api.speech(text));
-      audio = new Audio(url);
-      const played = audio;
-      await new Promise<void>((resolve) => {
-        played.onended = () => resolve();
-        played.onerror = () => resolve();
-        played.onpause = () => resolve();
-        played.play().catch(() => resolve());
+      const el = player ?? new Audio();
+      player = el;
+      current = el;
+      el.src = url;
+      const ok = await new Promise<boolean>((resolve) => {
+        el.onended = () => resolve(true);
+        el.onerror = () => resolve(true);
+        el.onpause = () => resolve(true);
+        el.play().catch((e: Error) => resolve(e?.name !== 'NotAllowedError'));
       });
       URL.revokeObjectURL(url);
+      if (ok) return;
+      lastBlocked = true;
+      window.dispatchEvent(new CustomEvent('intervwd:audio-blocked', { detail: text }));
       return;
     } catch {
       /* fall back to the browser's voice */
@@ -70,8 +112,12 @@ function speakInBrowser(text: string): Promise<void> {
 }
 
 export function stopSpeaking() {
-  audio?.pause();
-  audio = undefined;
+  if (current) {
+    current.onpause = null;
+    current.pause();
+    current.onended?.(new Event('ended'));
+  }
+  current = undefined;
   if (canSpeak) speechSynthesis.cancel();
 }
 

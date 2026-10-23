@@ -5,7 +5,7 @@ import type { InterviewStep, Turn, VerifyResult } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PublicTop } from '../components/Shell';
 import { cameraProblem, Loading, possessive, useLoad, when } from '../lib/util';
-import { canListen, listen, speak, stopSpeaking } from '../lib/speech';
+import { canListen, listen, speak, stopSpeaking, unlockAudio } from '../lib/speech';
 import { useLive } from '../lib/live';
 
 const SNAPSHOT_EVERY_MS = 90_000;
@@ -138,6 +138,7 @@ export function InterviewRoom() {
   }, [startListening]);
 
   const begin = async () => {
+    unlockAudio(); // this tap lets every later question play on iPhones
     setErr(undefined);
     setStage('live');
     setMode('thinking');
@@ -222,7 +223,17 @@ export function InterviewRoom() {
     }).catch(() => undefined);
   }, [live.resumed]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The browser blocked a spoken line (no tap since): offer one tap to hear it.
+  const [muted, setMuted] = useState(false);
+  useEffect(() => {
+    const on = () => setMuted(true);
+    window.addEventListener('intervwd:audio-blocked', on);
+    return () => window.removeEventListener('intervwd:audio-blocked', on);
+  }, []);
+
   const repeat = async () => {
+    unlockAudio();
+    setMuted(false);
     const last = [...turns].reverse().find((t) => t.role === 'interviewer');
     if (!last) return;
     listener.current?.stop();
@@ -381,6 +392,9 @@ export function InterviewRoom() {
                   </button>
                 )}
               </div>
+              {muted && (
+                <button className="btn btn-primary btn-block" onClick={repeat}><Icon name="speaker" /> Tap to hear the question</button>
+              )}
               {mode === 'listening' && !typing && (
                 <p className="faint" style={{ marginTop: 0 }}>{sending ? 'Sending your answer… keep talking to add more.' : 'Answer naturally. When you pause for a few seconds, the interviewer carries on.'}</p>
               )}
