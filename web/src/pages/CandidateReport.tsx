@@ -259,6 +259,9 @@ export function CandidateReport() {
             </div>
             <p className="small row"><Icon name="file" size={16} /> {candidate.cvUrl ? <a href={candidate.cvUrl} target="_blank" rel="noreferrer">{candidate.cvName}</a> : candidate.cvName}</p>
             <p className="small muted" style={{ marginTop: 8 }}>{candidate.cvSummary}</p>
+            {candidate.nameOnCv && !candidate.nameOnCv.toLowerCase().split(/\W+/).some((w) => w.length > 1 && candidate.name.toLowerCase().split(/\W+/).includes(w)) && (
+              <p className="small error" style={{ marginTop: 8 }}>This CV is in the name of {candidate.nameOnCv}, not {candidate.name}. Check it’s the right file.</p>
+            )}
             {candidate.skills.length > 0 && (
               <div className="row wrap" style={{ gap: 6, marginTop: 10 }}>{candidate.skills.map((s) => <span key={s} className="badge">{s}</span>)}</div>
             )}

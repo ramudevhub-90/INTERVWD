@@ -81,6 +81,8 @@ export interface Candidate {
   email: string;
   cvName: string;
   cvSummary: string;
+  /** The name written on the CV, when Nova found one. */
+  nameOnCv?: string;
   cvUrl?: string; // short-lived link to the uploaded CV (server only)
   phone?: string;
   hasPhoto?: boolean;

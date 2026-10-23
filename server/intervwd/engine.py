@@ -55,7 +55,8 @@ def turn(role: str, kind: str, text: str, question_index: int) -> Doc:
 CV_SCHEMA = {
     "type": "object",
     "properties": {
-        "summary": {"type": "string", "description": "One or two plain sentences: years of experience, main roles, standout work."},
+        "summary": {"type": "string", "description": "One or two plain sentences: years of experience, main roles, standout work. Never include the person's name; start with the experience."},
+        "nameOnCv": {"type": "string", "description": "The person's full name as written on the CV, or empty if there is none."},
         "skills": {"type": "array", "items": {"type": "string"}, "description": "Up to 6 skills or tools most relevant to the job."},
     },
     "required": ["summary", "skills"],
@@ -71,10 +72,28 @@ def read_cv(nova: Nova, data: bytes, content_type: str, job: Doc) -> Doc:
         max_tokens=400,
     )
     if result and result.get("summary"):
-        return {"summary": result["summary"].strip()[:400], "skills": [s.strip() for s in result.get("skills", []) if s.strip()][:6]}
+        name_on_cv = str(result.get("nameOnCv") or "").strip()[:80]
+        return {"summary": scrub_name(result["summary"].strip(), name_on_cv)[:400], "nameOnCv": name_on_cv,
+                "skills": [s.strip() for s in result.get("skills", []) if s.strip()][:6]}
     text = data.decode("utf-8", errors="ignore") if not content_type.endswith("pdf") else _pdf_text(data)
     skills = [k for k in KNOWN_SKILLS if re.search(rf"(?<![\w.]){re.escape(k)}(?![\w])", text, re.I)][:6]
     return {"summary": f"CV mentions {', '.join(skills)}." if skills else "CV received.", "skills": skills}
+
+
+def scrub_name(text: str, name: str) -> str:
+    """Take a person's name out of text (it must never leak into what the AI says to someone else)."""
+    for part in sorted({name, *name.split()}, key=len, reverse=True):
+        if len(part) > 1:
+            text = re.sub(rf"\b{re.escape(part)}(?:'s)?\b", "the candidate", text)
+    text = re.sub(r"(^|[.!?]\s+)the candidate", lambda m: m.group(1) + "The candidate", text)
+    return re.sub(r"(?:the candidate\s+){2,}", "the candidate ", text, flags=re.I).strip()
+
+
+def cv_name_differs(profile_name: str, name_on_cv: str) -> bool:
+    """True when the CV is clearly someone else's: no part of the two names matches."""
+    a = {w.lower() for w in re.findall(r"\w+", profile_name) if len(w) > 1}
+    b = {w.lower() for w in re.findall(r"\w+", name_on_cv) if len(w) > 1}
+    return bool(a and b and not a & b)
 
 
 def _pdf_text(data: bytes) -> str:
@@ -100,11 +119,13 @@ def personalise(question: str, candidate: Doc, index: int) -> str:
 
 def plan(nova: Nova, round: Doc, job: Doc, candidate: Doc, ctx: list[Doc] | None = None) -> list[str]:
     core = round["questions"]
+    first = candidate["name"].split()[0]
+    other = candidate.get("nameOnCv", "") if cv_name_differs(candidate["name"], candidate.get("nameOnCv", "")) else ""
     result = nova.json(
         "You are a fair, structured interviewer. Reword each core question so it fits this candidate's background, "
         "keeping exactly the same intent and difficulty, so every candidate is assessed on the same thing. "
         "One or two short spoken sentences each. No preamble, no numbering. " + NEUTRAL,
-        f"Job: {job['title']}. {job['description']}\nCandidate: {candidate.get('cvSummary', '')} Skills: {', '.join(candidate.get('skills', []))}\n"
+        f"Job: {job['title']}. {job['description']}\nCandidate: {scrub_name(candidate.get('cvSummary', ''), other)} Skills: {', '.join(candidate.get('skills', []))}\n"
         f"Address the candidate as {candidate['name'].split()[0]} if you use a name; never use any other name.\n"
         f"Fill q1 to q{len(core)}, one reworded question per core question. Where the team's notes give real context "
         "(their systems, scenarios), you may ground a question in it, without revealing model answers.\nCore questions:\n"
@@ -113,6 +134,8 @@ def plan(nova: Nova, round: Doc, job: Doc, candidate: Doc, ctx: list[Doc] | None
         max_tokens=2000,
     )
     worded = [re.sub(r"^\s*(?:q?\d+[.)]|[-*])\s*", "", str((result or {}).get(f"q{i + 1}") or "")).strip() for i in range(len(core))]
+    if other:
+        worded = [re.sub(r"\s+([,?.])", r"\1", re.sub(rf"\b(?:{'|'.join(re.escape(w) for w in other.split() if len(w) > 1)})\b", first, q)) for q in worded]
     if len(worded) == len(core) and all(10 < len(q) < 600 for q in worded):
         return worded
     if result is not None:
@@ -387,6 +410,8 @@ def triage(report: Doc, interview: Doc, round: Doc) -> Doc:
     ident = interview.get("identity") or {}
     if ident.get("status") == "approved":
         unsure.append("The identity check didn't match; a recruiter let them in.")
+    if interview.get("cvNameMismatch"):
+        unsure.append(f"The name on the CV ({interview['cvNameMismatch']}) isn't the candidate's.")
     if any(x.get("match") == "no_match" for x in interview.get("snapshots", [])):
         unsure.append("Some snapshots didn't match the profile photo.")
     if unsure:

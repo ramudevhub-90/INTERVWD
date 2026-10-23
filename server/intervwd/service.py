@@ -553,7 +553,7 @@ class Service:
         key = f"cv/{c['orgId']}/{c['id']}/{re.sub(r'[^A-Za-z0-9._-]', '_', cv_name)[-80:] or 'cv'}"
         self.blobs.save(key, cv, cv_type)
         read = engine.read_cv(self.nova, cv, cv_type, job)
-        c.update(cvName=cv_name[:120], cvKey=key, cvSummary=read["summary"], skills=read["skills"])
+        c.update(cvName=cv_name[:120], cvKey=key, cvSummary=read["summary"], skills=read["skills"], nameOnCv=read.get("nameOnCv", ""))
 
     def add_candidate(self, org_id: str, job_id: str, round_id: str, name: str, email: str, by: str,
                       cv: bytes = b"", cv_name: str = "", cv_type: str = "") -> Doc:
@@ -944,6 +944,8 @@ class Service:
         if done:
             rubric_ctx = self.search(iv, " ".join(f"{x['name']} {x['description']}" for x in round["criteria"]) + " " + " ".join(round["questions"]), ("interviewer",), 6)
             iv["report"] = engine.score(self.nova, iv, round, job, rubric_ctx)
+            if engine.cv_name_differs(c["name"], c.get("nameOnCv", "")):
+                iv["cvNameMismatch"] = c["nameOnCv"]
             iv["triage"] = engine.triage(iv["report"], iv, round)
             c["status"] = "completed"
             self.save_candidate(c)
