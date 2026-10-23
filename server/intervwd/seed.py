@@ -50,7 +50,25 @@ def ensure_demo(svc: Service) -> None:
         svc.store.put("recruiter", DEMO_EMAIL, {"email": DEMO_EMAIL, "name": "Priya Sharma", "orgId": DEMO_ORG, "verified": True})
 
 
-SEEDED_CANDIDATES = {"cand_rahul", "cand_ana", "cand_vikram", "cand_neha", "cand_meera", "cand_arjun"}
+# Decided candidates from the last two weeks, so Reports has a history: (id, name, job, round, overall, band, triage reason,
+# decision, automatic, days ago, minutes, source, identity, live takeover)
+HISTORY = [
+    ("cand_h_karan", "Karan Shah", "job_backend", "be1", 4.4, "fast_track", "", "advance", True, 2, 18, "qr", "matched", False),
+    ("cand_h_divya", "Divya Menon", "job_backend", "be1", 4.2, "fast_track", "", "advance", False, 3, 21, "link", "matched", False),
+    ("cand_h_rohan", "Rohan Gupta", "job_backend", "be1", 2.4, "below", "", "reject", False, 4, 15, "link", "matched", False),
+    ("cand_h_sana", "Sana Qureshi", "job_backend", "be1", 3.6, "review", "The identity check didn't match; a recruiter let them in.", "hold", False, 5, 19, "team", "approved", False),
+    ("cand_h_imran", "Imran Khan", "job_backend", "be1", 3.1, "below", "", "reject", False, 6, 14, "qr", "matched", False),
+    ("cand_h_lakshmi", "Lakshmi Rao", "job_backend", "be1", 4.6, "fast_track", "", "advance", True, 8, 23, "link", "matched", True),
+    ("cand_h_tom", "Tom Fernandes", "job_backend", "be1", 3.9, "review", "Only 96 words of answers: too little evidence.", "advance", False, 9, 12, "link", "matched", False),
+    ("cand_h_sid", "Siddharth Bose", "job_backend", "be1", 4.3, "fast_track", "", "hold", False, 11, 20, "team", "matched", False),
+    ("cand_h_pooja", "Pooja Desai", "job_storeops", "so1", 4.0, "fast_track", "", "advance", False, 1, 17, "qr", "matched", False),
+    ("cand_h_manoj", "Manoj Pillai", "job_storeops", "so1", 2.9, "below", "", "reject", False, 3, 16, "qr", "matched", False),
+    ("cand_h_kavya", "Kavya Reddy", "job_storeops", "so1", 3.7, "review", "Criteria disagree: Operations 4.4 but Customer focus 2.9.", "advance", False, 7, 19, "qr", "matched", True),
+    ("cand_h_farah", "Farah Ali", "job_analyst", "an1", 4.1, "fast_track", "", "advance", False, 2, 18, "link", "", False),
+    ("cand_h_nikhil", "Nikhil Joshi", "job_analyst", "an1", 3.4, "review", "Low confidence in the SQL score.", "hold", False, 10, 15, "team", "", False),
+    ("cand_h_aditi", "Aditi Verma", "job_analyst", "an1", 2.2, "below", "", "reject", False, 12, 13, "link", "", False),
+]
+SEEDED_CANDIDATES = {"cand_rahul", "cand_ana", "cand_vikram", "cand_neha", "cand_meera", "cand_arjun", *(h[0] for h in HISTORY)}
 
 
 def _clear_extras(svc: Service) -> None:
@@ -127,7 +145,7 @@ def reset_demo(svc: Service) -> None:
                  ["Walk me through how you would open a store on a busy festival morning.", "Two team members have a conflict that is affecting customers. What do you do?",
                   "Stock of a top-selling item runs out at noon. What happens next?", "Tell me about a time you improved a store metric. How did you measure it?"],
                  "nw-storeops-r1", [("s9", 3, "cand_meera"), ("s10", 27, None)])
-    round_("round_analyst_1", "job_analyst", 1, "Round 1 · SQL and reasoning",
+    an1 = round_("round_analyst_1", "job_analyst", 1, "Round 1 · SQL and reasoning",
            _crit("an1", ("SQL", "Writes correct, readable queries"), ("Analysis", "Finds the real question behind the data"), ("Storytelling", "Explains findings to non-analysts")),
            ["How would you find the top five products by repeat purchase rate last quarter? Talk me through the query.", "Sales dropped 8% last week. How do you work out why?",
             "Tell me about a dashboard or analysis that changed a decision."],
@@ -180,8 +198,62 @@ def reset_demo(svc: Service) -> None:
         so1, 4.3, "Calm, practical operator with strong people leadership.", ["Concrete festival-day plan", "Handled the team conflict fairly"], [],
         [(4.4, "Detailed opening checklist with staffing by hour."), (4.5, '"I talk to each of them separately first, then together."'),
          (4.1, "Offered substitutes and a callback for the out-of-stock item."), (4.2, "Clear and calm.")]))
+    _history(svc, {"be1": be1, "so1": so1, "an1": an1})
+    for iid, band, why in (("iv_demo_rahul", "review", "Low confidence in the System design score."),
+                           ("iv_demo_ana", "review", "Criteria disagree: System design 4.6 but Python and APIs 3.4."),
+                           ("iv_demo_neha", "below", "Below the bar."), ("iv_demo_arjun", "fast_track", "Clear pass.")):
+        doc = s.get("interview", iid)
+        if doc:
+            doc["triage"] = {"band": band, "reasons": [why]}
+            svc.save_interview(doc)
     for cid in ("cand_rahul", "cand_ana", "cand_neha", "cand_vikram", "cand_meera"):
         for d in svc.decisions(cid):
             s.delete("decision", d["id"])
     s.put("decision", "d_demo_arjun", {"id": "d_demo_arjun", "candidateId": "cand_arjun", "roundId": so1["id"], "action": "advance", "note": "Strong on people leadership.",
                                        "by": "Priya Sharma", "at": _at(-24)}, index=("candidate#cand_arjun#decisions", _at(-24)))
+
+
+def _history(svc: Service, rounds: dict[str, Doc]) -> None:
+    """Two weeks of finished, decided interviews (see HISTORY), with triage, decisions and timings."""
+    s = svc.store
+    notes = {"advance": "Strong answers with real examples. Moving on.", "hold": "Good, but let's compare with this week's other candidates first.",
+             "reject": "Not enough depth for this role right now."}
+    for n, (cid, name, job, rk, overall, band, reason, action, auto, days, minutes, source, ident, takeover) in enumerate(HISTORY):
+        r = rounds[rk]
+        start = -24 * days - 6 + (n % 5)
+        end_h = start + minutes / 60
+        first, last = name.split()
+        svc.save_candidate({"id": cid, "orgId": DEMO_ORG, "jobId": job, "roundId": r["id"], "name": name, "email": f"{first.lower()}.{last.lower()}@example.com",
+                            "cvName": f"{first}_{last}_CV.pdf", "cvSummary": "Experience relevant to the role.", "skills": [],
+                            "status": {"advance": "advanced", "hold": "on_hold", "reject": "rejected"}[action], "createdAt": _at(start - 30),
+                            **({"addedBy": "Priya Sharma"} if source == "team" else {"source": source})})
+        spread = [0.3, -0.2, 0.1, -0.2]
+        scores = [(max(1.0, min(5.0, round(overall + spread[i % 4], 1))), "Quoted from the answer.") for i in range(len(r["criteria"]))]
+        if reason.startswith("Criteria disagree"):
+            scores = [(4.4, "Detailed staffing plan."), (3.8, "Fair, calm approach."), (2.9, "Little about the customer."), (3.7, "Clear.")]
+        report = _report(r, overall, f"{first} gave {'clear, specific' if overall >= 4 else 'reasonable' if overall >= 3 else 'thin'} answers for the role.",
+                         ["Specific examples"] if overall >= 3.5 else [], [] if overall >= 3.5 else ["Answers stayed general"], scores)
+        report["scoredBy"] = "nova"
+        for c in report["criteria"]:
+            c["confidence"] = "low" if "Low confidence" in reason and c["name"] == "SQL" else "high"
+        q = r["questions"]
+        turns = [("interviewer", "greeting", f"Hi {first}, thanks for joining.", 0), ("interviewer", "question", q[0], 0),
+                 ("candidate", "answer", "I led the work end to end and measured the result.", 0)]
+        if takeover:
+            turns += [("interviewer", "team_question", "How do you handle a customer who won't calm down?", 1),
+                      ("candidate", "answer", "I listen first, repeat the problem back and say exactly what I'll do next.", 1),
+                      ("interviewer", "handover", "Priya from Northwind Labs has joined and will take it from here.", 1),
+                      ("interviewer", "handover", "Thanks, Priya. Let's carry on.", 1)]
+        turns += [("interviewer", "question", q[1], 1), ("candidate", "answer", "I would check the data first, then decide.", 1)]
+        iid = f"iv_{cid[5:]}"
+        svc.save_interview({"id": iid, "orgId": DEMO_ORG, "jobId": job, "roundId": r["id"], "candidateId": cid, "slotStart": _at(start), "status": "completed",
+                            "turns": _turns(q, turns), "snapshots": [], "report": report, "startedAt": _at(start), "endedAt": _at(end_h),
+                            "triage": {"band": band, "reasons": [reason] if reason else (["Clear pass."] if band == "fast_track" else ["Below the bar."])},
+                            **({"identity": {"status": ident}} if ident else {})})
+        for d in svc.decisions(cid):
+            s.delete("decision", d["id"])
+        at = _at(end_h + (0.02 if auto else 2 + n % 9))
+        s.put("decision", f"d_{cid[5:]}", {"id": f"d_{cid[5:]}", "candidateId": cid, "roundId": r["id"], "action": action,
+                                          "note": "Moved on automatically: a clear pass." if auto else notes[action],
+                                          "by": "Intervwd (automatic)" if auto else "Priya Sharma", "at": at, **({"automatic": True} if auto else {})},
+              index=(f"candidate#{cid}#decisions", at))

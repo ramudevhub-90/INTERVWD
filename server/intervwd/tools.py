@@ -35,7 +35,12 @@ def find_candidate(svc: Service, org_id: str, name: str) -> Doc:
         raise Problem("Say which candidate.")
     cands = svc.all_candidates(org_id)
     exact = [c for c in cands if c["name"].lower() == want]
-    matches = exact or [c for c in cands if want in c["name"].lower() or c["name"].lower().split()[0] == want.split()[0]]
+    # Whole words from the start of a name part: "Ana" is Ana Silva, not Sana Qureshi; "Ana S" still finds her.
+    words = want.split()
+    parts = lambda c: c["name"].lower().split()  # noqa: E731
+    starts = [c for c in cands if all(any(p.startswith(w) for p in parts(c)) for w in words)]
+    firsts = [c for c in starts if parts(c)[0] == words[0]]
+    matches = exact or firsts or starts
     if not matches:
         raise Problem(f"I couldn't find a candidate called {name}.", 404)
     if len(matches) > 1:

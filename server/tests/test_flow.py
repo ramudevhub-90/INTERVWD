@@ -774,10 +774,11 @@ def test_reports_and_weekly_dashboard(env):
 def test_qr_scans_are_counted_in_reports(env):
     client, _ = env
     h = demo_login(client)
+    before = client.get("/api/reports?days=7", headers=h).json()["sources"]["scannedQr"]
     r = client.post("/api/invites/nw-backend-r1/join", data={"name": "Walk In", "email": "walkin@example.com", "slotId": "now", "consent": "true",
                                                            "faceConsent": "true", "source": "qr"},
                     files={"cv": ("cv.txt", b"Walk In. Python.", "text/plain"), "photo": ("me.jpg", FACE, "image/jpeg")})
     assert r.status_code == 200, r.text
     svc = client.app.state.svc
     assert svc.store.get("candidate", svc.store.get("interview", r.json()["interviewId"])["candidateId"])["source"] == "qr"
-    assert client.get("/api/reports?days=7", headers=h).json()["sources"]["scannedQr"] == 1
+    assert client.get("/api/reports?days=7", headers=h).json()["sources"]["scannedQr"] == before + 1
