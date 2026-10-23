@@ -42,6 +42,12 @@ SPECS: list[Doc] = [
     {"name": "add_interview_slots", "description": "Add interview time slots to a job's round. Times are ISO 8601 with time zone.",
      "inputSchema": {"json": {"type": "object", "properties": {"job_title": {"type": "string"}, "starts": {"type": "array", "items": {"type": "string"}}, "round_number": {"type": "integer"}},
                               "required": ["job_title", "starts"]}}},
+    {"name": "list_pending_approvals", "description": "Sign-ups waiting for the recruiter's approval, and interviews locked by a failed identity check.",
+     "inputSchema": {"json": {"type": "object", "properties": {}}}},
+    {"name": "review_signup", "description": "Approve or decline a candidate's sign-up. Call with confirm=false first to read back; confirm=true only after the recruiter says yes.",
+     "inputSchema": {"json": {"type": "object", "properties": {"candidate_name": _name, "approve": {"type": "boolean"}, "confirm": {"type": "boolean"}}, "required": ["candidate_name", "approve", "confirm"]}}},
+    {"name": "let_candidate_in", "description": "Let a candidate whose identity check failed start their interview anyway, after the recruiter checked the photos. confirm=false first, confirm=true after a yes.",
+     "inputSchema": {"json": {"type": "object", "properties": {"candidate_name": _name, "confirm": {"type": "boolean"}}, "required": ["candidate_name", "confirm"]}}},
     *[
         {"name": f"{a}_candidate", "description": d + " Call with confirm=false first to read back; confirm=true only after the recruiter says yes.",
          "inputSchema": {"json": {"type": "object", "properties": {"candidate_name": _name, "confirm": {"type": "boolean"}, "note": {"type": "string"}}, "required": ["candidate_name", "confirm"]}}}
@@ -60,6 +66,9 @@ def run_tool(svc: Service, session: Doc, name: str, args: Doc, tz_offset_min: in
         "compare_candidates": lambda: tools.compare_candidates(svc, session, args.get("candidate_names") or None),
         "get_invite_link": lambda: tools.get_invite_link(svc, session, args.get("job_title"), args.get("round_number")),
         "add_interview_slots": lambda: tools.add_interview_slots(svc, session, str(args.get("job_title", "")), list(args.get("starts", [])), int(args.get("round_number") or 1)),
+        "list_pending_approvals": lambda: tools.pending_approvals(svc, session),
+        "review_signup": lambda: tools.review_signup(svc, session, str(args.get("candidate_name", "")), bool(args.get("approve", True)), bool(args.get("confirm"))),
+        "let_candidate_in": lambda: tools.let_in(svc, session, str(args.get("candidate_name", "")), bool(args.get("confirm"))),
         "advance_candidate": lambda: tools.decide(svc, session, str(args.get("candidate_name", "")), "advance", bool(args.get("confirm")), str(args.get("note", ""))),
         "hold_candidate": lambda: tools.decide(svc, session, str(args.get("candidate_name", "")), "hold", bool(args.get("confirm")), str(args.get("note", ""))),
         "reject_candidate": lambda: tools.decide(svc, session, str(args.get("candidate_name", "")), "reject", bool(args.get("confirm")), str(args.get("note", ""))),
@@ -151,6 +160,16 @@ class Assistant:
             doc.pop("pending")
             return {"text": "Okay, I won't change anything."}
 
+        if named and re.search(r"\b(approve|accept)\b", text):
+            doc["pending"] = {"tool": "review_signup", "name": named}
+            r = run_tool(self.svc, session, "review_signup", {"candidate_name": named, "approve": True}, tz)
+            return {"text": r.get("say") or r.get("error"), "pendingConfirmation": True}
+        if named and re.search(r"\blet .* in\b|\blet in\b", text):
+            doc["pending"] = {"tool": "let_candidate_in", "name": named}
+            r = run_tool(self.svc, session, "let_candidate_in", {"candidate_name": named}, tz)
+            return {"text": r.get("say") or r.get("error"), "pendingConfirmation": True}
+        if re.search(r"\b(approval|approve|sign-?ups?|locked|identity)\b", text):
+            return run("list_pending_approvals")
         action = ("advance" if re.search(r"\b(move|advance|progress|next round|shortlist)\b", text)
                   else "reject" if re.search(r"\b(reject|decline|not progress)\b", text) else "hold" if re.search(r"\bhold\b", text) else None)
         if action and named:

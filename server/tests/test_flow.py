@@ -72,7 +72,7 @@ def test_full_interview(env):
     job_id = client.post("/api/jobs", headers=h, json={"title": "QA Engineer", "location": "Remote", "description": "Test our payments platform end to end."}).json()["id"]
     rnd = client.post(f"/api/jobs/{job_id}/rounds", headers=h, json={
         "name": "Screen", "durationMin": 15, "criteria": [{"name": "Testing", "description": "Plans and automates tests"}],
-        "questions": ["How do you decide what to test first?", "Tell me about a bug you found late."]}).json()
+        "questions": ["How do you decide what to test first?", "Tell me about a bug you found late."], "identityCheck": False, "requireApproval": False}).json()
     assert rnd["name"] == "Round 1 · Screen"
     start = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
     rnd = client.post(f"/api/rounds/{rnd['id']}/slots", headers=h, json={"starts": [start]}).json()
@@ -204,7 +204,8 @@ def test_knowledge_base_shapes_the_interview(env):
 
     # A candidate's question is answered from shareable knowledge only (rules: the fallback says it'll be passed on).
     iv = "iv_demo_vikram"
-    client.post(f"/api/interviews/{iv}/start")
+    client.post("/api/candidates/cand_vikram/identity/approve", headers=h)  # sample candidate has no photo
+    assert client.post(f"/api/interviews/{iv}/start").status_code == 200
     for _ in range(10):
         out = client.post(f"/api/interviews/{iv}/answer", json={"text": "I would use idempotency keys and retries with backoff on every payment call."}).json()
     assert out["turns"][0]["kind"] == "invite_questions"
@@ -218,3 +219,92 @@ def test_knowledge_base_shapes_the_interview(env):
 
     client.delete(f"/api/jobs/job_backend/knowledge/{docs[0]['id']}", headers=h)
     assert len(kb()["documents"]) == 1
+
+
+FACE = b"\xff\xd8 face of kiran"
+
+
+def book(client, code, slot, **extra):
+    files = {"cv": ("cv.txt", b"Kiran. Python and SQL.", "text/plain")}
+    if extra.pop("photo", True):
+        files["photo"] = ("me.jpg", FACE, "image/jpeg")
+    data = {"name": "Kiran Rao", "email": "kiran@example.com", "slotId": slot, "consent": "true", "faceConsent": "true", **extra}
+    return client.post(f"/api/invites/{code}/join", data=data, files=files)
+
+
+def open_slot(client, h, round_id):
+    start = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    return client.post(f"/api/rounds/{round_id}/slots", headers=h, json={"starts": [start]}).json()["slots"][-1]["id"]
+
+
+def test_identity_check_gates_the_interview(env):
+    client, outbox = env
+    h = demo_login(client)
+    slot = open_slot(client, h, "round_backend_1")
+    assert book(client, "nw-backend-r1", slot, photo=False).status_code == 400  # photo required
+    r = book(client, "nw-backend-r1", slot)
+    assert r.status_code == 200 and r.json()["status"] == "scheduled", r.text
+    iv = r.json()["interviewId"]
+    assert client.get(f"/api/interviews/{iv}").json()["identity"] == {"required": True, "status": "pending", "attemptsLeft": 3}
+    assert client.post(f"/api/interviews/{iv}/start").status_code == 403
+    verify = lambda img: client.post(f"/api/interviews/{iv}/verify", files={"image": ("live.jpg", img, "image/jpeg")}).json()  # noqa: E731
+    assert verify(b"someone else")["attemptsLeft"] == 2
+    assert verify(b" ")["result"] == "no_face"
+    locked = verify(b"someone else again")
+    assert locked["status"] == "locked" and client.post(f"/api/interviews/{iv}/start").status_code == 403
+    assert verify(FACE)["status"] == "locked"  # stays locked until a person lets them in
+
+    cid = client.app.state.svc.store.get("interview", iv)["candidateId"]
+    view = client.get(f"/api/candidates/{cid}", headers=h).json()
+    assert view["identityRequired"] and view["interviews"][-1]["identity"]["status"] == "locked"
+    assert client.get(view["candidate"]["photoUrl"]).content == FACE
+    assert client.post(f"/api/candidates/{cid}/identity/approve", headers=h).json()["status"] == "approved"
+    assert client.post(f"/api/interviews/{iv}/start").status_code == 200
+
+
+def test_matching_face_starts_and_photos_are_deleted_after_decision(env):
+    client, _ = env
+    h = demo_login(client)
+    iv = book(client, "nw-backend-r1", open_slot(client, h, "round_backend_1")).json()["interviewId"]
+    assert client.post(f"/api/interviews/{iv}/verify", files={"image": ("live.jpg", FACE, "image/jpeg")}).json()["status"] == "matched"
+    client.post(f"/api/interviews/{iv}/start")
+    for _ in range(11):
+        out = client.post(f"/api/interviews/{iv}/answer", json={"text": "I use idempotency keys, retries with backoff and clear logging for every payment."}).json()
+        if out["done"]:
+            break
+    svc = client.app.state.svc
+    cid = svc.store.get("interview", iv)["candidateId"]
+    assert client.post(f"/api/candidates/{cid}/decision", headers=h, json={"action": "reject", "note": ""}).status_code == 200
+    c = svc.store.get("candidate", cid)
+    assert c.get("photoDeleted") and "photoKey" not in c and svc.blobs.load(f"faces/{c['orgId']}/{cid}/reference") is None
+
+
+def test_signup_needs_approval(env):
+    client, outbox = env
+    h = demo_login(client)
+    r = book(client, "nw-storeops-r1", open_slot(client, h, "round_storeops_1"))
+    assert r.json() == {"interviewId": None, "status": "pending_approval"}
+    svc = client.app.state.svc
+    cid = next(c["id"] for c in svc.candidates("job_storeops") if c["name"] == "Kiran Rao")
+    iv = next(i for i in svc.interviews("org_northwind") if i["candidateId"] == cid)["id"]
+    assert client.post(f"/api/interviews/{iv}/start").status_code == 403
+    assert not any(iv in m[2] for m in outbox.sent)  # no interview link until approved
+    assert client.post(f"/api/candidates/{cid}/signup", headers=h, json={"approve": True}).json()["status"] == "scheduled"
+    assert any(iv in m[2] for m in outbox.sent)
+
+
+def test_hr_adds_a_candidate_who_finishes_their_profile(env):
+    client, outbox = env
+    h = demo_login(client)
+    open_slot(client, h, "round_storeops_1")
+    r = client.post("/api/jobs/job_storeops/candidates", headers=h, data={"roundId": "round_storeops_1", "name": "Asha Pillai", "email": "asha@example.com"})
+    assert r.status_code == 200, r.text
+    link = r.json()["link"]
+    assert any(m[0] == "asha@example.com" and link in m[2] for m in outbox.sent)
+    token = link.split("t=")[1]
+    inv = client.get(f"/api/invites/nw-storeops-r1?t={token}").json()
+    assert inv["invited"]["name"] == "Asha Pillai" and inv["round"]["requireApproval"] is False
+    slot = inv["openSlots"][-1]["id"]
+    done = book(client, "nw-storeops-r1", slot, t=token, name="Asha Pillai", email="asha@example.com")
+    assert done.json()["status"] == "scheduled"  # HR-added candidates are pre-approved
+    assert client.get(f"/api/invites/nw-storeops-r1?t={token}").status_code == 404  # the personal link is single use

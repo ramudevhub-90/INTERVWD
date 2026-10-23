@@ -15,7 +15,8 @@ INSTRUCTIONS = """Intervwd runs structured AI voice interviews for a company's h
 candidate against the round's rubric. You help the signed-in recruiter run their pipeline.
 - Use get_todays_interviews for "how did today go", list_awaiting_decision for who needs a decision,
   get_candidate_report and compare_candidates for scores and evidence.
-- advance_candidate, hold_candidate and reject_candidate change a candidate's status: call them with
+- list_pending_approvals finds sign-ups to approve and interviews locked by a failed identity check.
+- advance_candidate, hold_candidate, reject_candidate, review_signup and let_candidate_in change things: call them with
   confirm=false first and read back the result, then with confirm=true only after the recruiter says yes.
 - Never recommend rejecting a candidate; report scores and evidence and let the recruiter decide.
 - Each tool returns a `say` sentence that reads well aloud."""
@@ -79,6 +80,24 @@ def create_server(svc: Service) -> MCPServer:
         """Add interview time slots candidates can book. starts are ISO 8601 date-times with a time
         zone offset, e.g. 2026-10-26T10:00:00+05:30."""
         return call(tools.add_interview_slots, job_title, starts, round_number)
+
+    @mcp.tool(title="Who needs approval", annotations=READ)
+    def list_pending_approvals() -> dict[str, Any]:
+        """Candidate sign-ups waiting for approval, and interviews locked because the identity check
+        (face match against the profile photo) failed."""
+        return call(tools.pending_approvals)
+
+    @mcp.tool(title="Approve or decline a sign-up", annotations=CHANGE)
+    def review_signup(candidate_name: str, approve: bool = True, confirm: bool = False) -> dict[str, Any]:
+        """Approve a candidate's sign-up (emails their interview link) or decline it. confirm=false reads
+        back; confirm=true only after the recruiter says yes."""
+        return call(tools.review_signup, candidate_name, approve, confirm)
+
+    @mcp.tool(title="Let a candidate in after a failed identity check", annotations=CHANGE)
+    def let_candidate_in(candidate_name: str, confirm: bool = False) -> dict[str, Any]:
+        """Let a candidate start even though the face check didn't match, after the recruiter has looked
+        at the photos. confirm=false reads back; confirm=true after a yes."""
+        return call(tools.let_in, candidate_name, confirm)
 
     @mcp.tool(title="Move a candidate on", annotations=CHANGE)
     def advance_candidate(candidate_name: str, confirm: bool = False, note: str = "") -> dict[str, Any]:

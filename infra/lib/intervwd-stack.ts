@@ -67,12 +67,13 @@ export class IntervwdStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
-    // CVs and camera snapshots: private, encrypted, deleted after 90 days.
+    // CVs and camera snapshots: private, encrypted, deleted after 90 days. Face photos for the
+    // identity check go after 30 days at most (the server deletes them as soon as a decision is made).
     const uploads = new s3.Bucket(this, 'Uploads', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
-      lifecycleRules: [{ expiration: cdk.Duration.days(90) }],
+      lifecycleRules: [{ expiration: cdk.Duration.days(90) }, { prefix: 'faces/', expiration: cdk.Duration.days(30) }],
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
@@ -144,6 +145,8 @@ export class IntervwdStack extends cdk.Stack {
       server.addToRolePolicy(new iam.PolicyStatement({ actions: ['sts:AssumeRole'], resources: [props.sesRoleArn] }));
     }
     server.addToRolePolicy(new iam.PolicyStatement({ actions: ['polly:SynthesizeSpeech'], resources: ['*'] }));
+    // Identity check: one-to-one face comparison only (no collections, nothing stored by Rekognition).
+    server.addToRolePolicy(new iam.PolicyStatement({ actions: ['rekognition:CompareFaces'], resources: ['*'] }));
     server.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['ses:SendEmail'],

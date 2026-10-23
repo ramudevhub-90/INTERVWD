@@ -12,7 +12,6 @@ import json
 import os
 import threading
 import time
-from decimal import Decimal
 from typing import Any, Protocol
 
 
@@ -27,6 +26,7 @@ class Store(Protocol):
 class Blobs(Protocol):
     def save(self, key: str, data: bytes, content_type: str) -> None: ...
     def load(self, key: str) -> tuple[bytes, str] | None: ...
+    def delete(self, key: str) -> None: ...
 
 
 def _live(item: dict[str, Any] | None) -> bool:
@@ -64,12 +64,6 @@ class MemoryStore:
     def listed(self, index: str) -> list[dict[str, Any]]:
         rows = [(i["index"][1], json.loads(i["doc"])) for i in list(self._items.values()) if i["index"] and i["index"][0] == index and _live(i)]
         return [doc for _, doc in sorted(rows, key=lambda r: r[0])]
-
-
-def _plain(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return int(value) if value == int(value) else float(value)
-    return value
 
 
 class DynamoStore:
@@ -140,6 +134,9 @@ class MemoryBlobs:
     def load(self, key: str) -> tuple[bytes, str] | None:
         return self._files.get(key)
 
+    def delete(self, key: str) -> None:
+        self._files.pop(key, None)
+
 
 class S3Blobs:
     def __init__(self, bucket: str, client: Any = None) -> None:
@@ -157,6 +154,9 @@ class S3Blobs:
         except self.s3.exceptions.NoSuchKey:
             return None
         return obj["Body"].read(), obj.get("ContentType", "application/octet-stream")
+
+    def delete(self, key: str) -> None:
+        self.s3.delete_object(Bucket=self.bucket, Key=key)
 
 
 def from_env() -> tuple[Store, Blobs]:

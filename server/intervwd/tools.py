@@ -165,3 +165,31 @@ def decide(svc: Service, s: Doc, candidate_name: str, action: str, confirm: bool
     else:
         say = f"Done. {c['name']} is marked as not progressing. No email goes out until your team sends one."
     return {"say": say, "done": True, "nextRound": nxt["name"] if nxt else None}
+
+
+def pending_approvals(svc: Service, s: Doc) -> Doc:
+    """Sign-ups waiting for approval, and interviews locked by a failed identity check."""
+    d = svc.dashboard(s["orgId"])
+    names = [f"{p['candidate']['name']} for {p['job']['title']}" for p in d["pending"] if p["job"]]
+    locked = [r["candidate"]["name"] for r in d["identityLocked"]]
+    parts = [f"{len(names)} sign-up{'s' if len(names) != 1 else ''} waiting for approval: {', '.join(names)}." if names else "No sign-ups are waiting for approval."]
+    if locked:
+        parts.append(f"{', '.join(locked)} failed the identity check and can't start until you let them in.")
+    return {"say": " ".join(parts), "signups": names, "identityLocked": locked}
+
+
+def review_signup(svc: Service, s: Doc, candidate_name: str, approve: bool, confirm: bool = False) -> Doc:
+    c = find_candidate(svc, s["orgId"], candidate_name)
+    verb = f"approve {c['name']}'s profile and email their interview link" if approve else f"decline {c['name']}'s sign-up and let them know"
+    if not confirm:
+        return {"say": f"To confirm: {verb}. Shall I?", "needsConfirmation": True}
+    svc.review_signup(s["orgId"], c["id"], approve, s["name"])
+    return {"say": f"Done. {c['name']} has their interview link." if approve else f"Done. {c['name']} has been told.", "done": True}
+
+
+def let_in(svc: Service, s: Doc, candidate_name: str, confirm: bool = False) -> Doc:
+    c = find_candidate(svc, s["orgId"], candidate_name)
+    if not confirm:
+        return {"say": f"To confirm: let {c['name']} start the interview without a matching identity check. Have you checked the photos? Shall I?", "needsConfirmation": True}
+    svc.approve_identity(s["orgId"], c["id"], s["name"])
+    return {"say": f"Done. {c['name']} can start the interview now.", "done": True}

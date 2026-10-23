@@ -11,6 +11,7 @@ Layout in the store (see store.py):
   decision/<id>   listed under      candidate#<id>#decisions
   kdoc/<id>       listed under      job#<jobId>#knowledge       (the file itself lives in the knowledge base bucket)
   booking/<roundId>#<slotId>        guards a slot so two candidates can't book it at once
+  candidate-invite/<token>          {candidateId}: the personal link for a candidate HR added
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import engine
+from .faces import FaceMatcher, FakeMatcher
 from .knowledge import KINDS, Knowledge, NoKnowledge
 from .nova import Nova
 from .store import Blobs, Store
@@ -69,6 +71,7 @@ class Service:
     app_url: str = "https://intervwd.com"
     mailer: Any = None  # auth.Mailer; None skips candidate emails (tests)
     kb: Knowledge = NoKnowledge()  # type: ignore[assignment]
+    faces: FaceMatcher = FakeMatcher()  # type: ignore[assignment]
 
     def _email(self, to: str, subject: str, text: str) -> None:
         if self.mailer:
@@ -147,6 +150,9 @@ class Service:
             [r for iv in ivs if iv["status"] == "completed" and cands.get(iv["candidateId"], {}).get("status") == "completed" and (r := self._row(iv, cache))],
             key=lambda r: -(r["interview"].get("report") or {}).get("overall", 0),
         )
+        pending = [{"candidate": c, "job": next((j for j in jobs if j["id"] == c["jobId"]), None), "round": self.store.get("round", c["roundId"])}
+                   for c in cands.values() if c["status"] == "pending_approval"]
+        locked = [r for iv in ivs if (iv.get("identity") or {}).get("status") == "locked" and iv["status"] != "completed" and (r := self._row(iv, cache))]
         job_rows = []
         for j in jobs:
             rs = self.rounds(j["id"])
@@ -158,7 +164,10 @@ class Service:
                 "interviewsToday": sum(1 for iv in ivs if _same_day(iv["slotStart"], now, tz_offset_min)),
                 "awaitingDecision": len(awaiting),
                 "candidates": len(cands),
+                "pendingApproval": len(pending),
             },
+            "pending": pending,
+            "identityLocked": locked,
             "jobs": job_rows,
             "upcoming": upcoming,
             "awaiting": awaiting,
@@ -204,7 +213,8 @@ class Service:
         slug = re.sub(r"[^a-z0-9]+", "-", job["title"].lower()).strip("-")[:16]
         code = f"{slug}-r{index}-{secrets.token_hex(3)}"
         round = {"id": new_id("round"), "jobId": job_id, "orgId": org_id, "index": index, "name": f"Round {index} · {name[:60]}",
-                 "durationMin": int(body.get("durationMin") or 20), "criteria": criteria, "questions": questions, "inviteCode": code, "slots": []}
+                 "durationMin": int(body.get("durationMin") or 20), "criteria": criteria, "questions": questions, "inviteCode": code, "slots": [],
+                 "identityCheck": bool(body.get("identityCheck", True)), "requireApproval": bool(body.get("requireApproval", True))}
         self.save_round(round)
         self.store.put("invite", code, {"roundId": round["id"]})
         return round
@@ -235,13 +245,17 @@ class Service:
     def _public_interview(self, iv: Doc) -> Doc:
         """Snapshots are served through the API, never as raw S3 keys."""
         out = {k: v for k, v in iv.items() if k != "plan"}
-        out["snapshots"] = [{"at": s["at"], "url": f"/api/interviews/{iv['id']}/snapshots/{i}"} for i, s in enumerate(iv.get("snapshots", []))]
+        out["snapshots"] = [{"at": s["at"], "url": f"/api/interviews/{iv['id']}/snapshots/{i}", **({"match": s["match"], "similarity": s.get("similarity")} if s.get("match") else {})}
+                            for i, s in enumerate(iv.get("snapshots", []))]
+        if iv.get("identity"):
+            out["identity"] = {k: v for k, v in iv["identity"].items() if k != "liveKey"} | {"hasLive": bool(iv["identity"].get("liveKey"))}
         return out
 
     def candidate_view(self, org_id: str, candidate_id: str) -> Doc:
         c = self._owned("candidate", candidate_id, org_id, "candidate")
         return {
-            "candidate": c,
+            "candidate": {k: v for k, v in c.items() if k != "photoKey"} | {"hasPhoto": bool(c.get("photoKey"))},
+            "identityRequired": bool((self.store.get("round", c["roundId"]) or {}).get("identityCheck")),
             "job": self._get("job", c["jobId"], "job"),
             "rounds": self.rounds(c["jobId"]),
             "interviews": [self._public_interview(iv) for iv in self.interviews(org_id) if iv["candidateId"] == candidate_id],
@@ -258,6 +272,8 @@ class Service:
         self.store.put("decision", d["id"], d, index=(f"candidate#{candidate_id}#decisions", d["at"]))
         c["status"] = {"advance": "advanced", "hold": "on_hold", "reject": "rejected"}[action]
         self.save_candidate(c)
+        if action != "hold":
+            self._purge_faces(c, [i for i in self.interviews(org_id) if i["candidateId"] == candidate_id])
         nxt = self.next_round(c)
         if action == "advance" and nxt:
             org, job = self.org(org_id), self._get("job", c["jobId"], "job")
@@ -344,7 +360,7 @@ class Service:
             return []
         return self.kb.search(iv["orgId"], iv["jobId"], query, kinds, k)
 
-    # ---------- Candidate side ----------
+    # ---------- Candidate profiles: sign-up by link, approval, HR-added candidates ----------
 
     def _round_by_code(self, code: str) -> Doc:
         ref = self.store.get("invite", code)
@@ -352,58 +368,217 @@ class Service:
             raise Problem("This invite link isn't valid. Ask the company for a new one.", 404)
         return self._get("round", ref["roundId"], "round")
 
-    def invite(self, code: str) -> Doc:
+    def _invited(self, round: Doc, token: str | None) -> Doc | None:
+        """The candidate HR added, behind a personal link (/i/<code>?t=<token>)."""
+        if not token:
+            return None
+        ref = self.store.get("candidate-invite", token)
+        c = self.store.get("candidate", ref["candidateId"]) if ref else None
+        if not c or c["roundId"] != round["id"]:
+            raise Problem("This personal link isn't valid any more. Ask the company for a new one.", 404)
+        if c["status"] != "invited":
+            raise Problem("You've already completed your profile. Check your email for the interview link.", 409)
+        return c
+
+    def invite(self, code: str, token: str | None = None) -> Doc:
         round = self._round_by_code(code)
+        invited = self._invited(round, token)
         cutoff = datetime.now(timezone.utc).timestamp() - 3600
         return {
             "orgName": self.org(round["orgId"])["name"],
             "job": self._get("job", round["jobId"], "job"),
-            "round": {k: round[k] for k in ("id", "name", "index", "durationMin")},
+            "round": {k: round.get(k) for k in ("id", "name", "index", "durationMin")}
+            | {"identityCheck": bool(round.get("identityCheck")), "requireApproval": bool(round.get("requireApproval")) and not invited},
             "openSlots": [s for s in round["slots"] if not s.get("candidateId") and _parse(s["start"]).timestamp() > cutoff],
+            **({"invited": {"name": invited["name"], "email": invited["email"], "hasCv": bool(invited.get("cvKey"))}} if invited else {}),
         }
 
-    def join(self, code: str, name: str, email: str, slot_id: str, consent: bool, cv: bytes, cv_name: str, cv_type: str) -> Doc:
+    def _check_cv(self, cv: bytes, cv_type: str) -> str:
+        if len(cv) > MAX_CV_BYTES:
+            raise Problem("Your CV is over 5 MB. Upload a smaller file.")
+        cv_type = cv_type.split(";")[0].strip() or "application/octet-stream"
+        if cv_type not in CV_TYPES:
+            raise Problem("Upload your CV as a PDF, Word or text file.")
+        return cv_type
+
+    def _save_cv(self, c: Doc, job: Doc, cv: bytes, cv_name: str, cv_type: str) -> None:
+        key = f"cv/{c['orgId']}/{c['id']}/{re.sub(r'[^A-Za-z0-9._-]', '_', cv_name)[-80:] or 'cv'}"
+        self.blobs.save(key, cv, cv_type)
+        read = engine.read_cv(self.nova, cv, cv_type, job)
+        c.update(cvName=cv_name[:120], cvKey=key, cvSummary=read["summary"], skills=read["skills"])
+
+    def add_candidate(self, org_id: str, job_id: str, round_id: str, name: str, email: str, by: str,
+                      cv: bytes = b"", cv_name: str = "", cv_type: str = "") -> Doc:
+        """HR adds a candidate; they get a personal link to finish their profile and book. Pre-approved."""
+        round = self._owned("round", round_id, org_id, "round")
+        if round["jobId"] != job_id:
+            raise Problem("That round isn't part of this job.")
+        if len(name.strip()) < 2:
+            raise Problem("Enter the candidate's full name.")
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email.strip()):
+            raise Problem("Enter the candidate's email, like name@example.com.")
+        job = self._get("job", job_id, "job")
+        c = {"id": new_id("cand"), "orgId": org_id, "jobId": job_id, "roundId": round_id, "name": name.strip()[:120], "email": email.strip().lower()[:200],
+             "cvName": "", "cvSummary": "Profile not completed yet.", "skills": [], "status": "invited", "addedBy": by, "createdAt": engine.now()}
+        if cv:
+            self._save_cv(c, job, cv, cv_name or "cv", self._check_cv(cv, cv_type))
+        token = secrets.token_urlsafe(18)
+        self.store.put("candidate-invite", token, {"candidateId": c["id"]})
+        self.save_candidate(c)
+        org = self.org(org_id)
+        link = f"{self.app_url}/i/{round['inviteCode']}?t={token}"
+        self._email(c["email"], f"{org['name']} invites you to interview for {job['title']}",
+                    f"Hi {c['name'].split()[0]},\n\n{org['name']} would like to interview you for {job['title']} ({round['name']}).\n\n"
+                    f"Finish your profile and pick a time here: {link}\n\nThe interview is by voice with an AI interviewer, about {round['durationMin']} minutes. "
+                    f"A person at {org['name']} reviews it and makes every decision.\n\nIntervwd, on behalf of {org['name']}")
+        return {"candidate": c, "link": link}
+
+    def join(self, code: str, name: str, email: str, slot_id: str, consent: bool, cv: bytes, cv_name: str, cv_type: str,
+             photo: bytes = b"", photo_type: str = "", face_consent: bool = False, phone: str = "", token: str | None = None) -> Doc:
         round = self._round_by_code(code)
+        invited = self._invited(round, token)
         if len(name.strip()) < 2:
             raise Problem("Enter your full name.")
         if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email.strip()):
             raise Problem("Enter your email, like name@example.com.")
         if not consent:
             raise Problem("Agree to the recording terms to book.")
-        if not cv:
+        if not cv and not (invited and invited.get("cvKey")):
             raise Problem("Upload your CV as a PDF or text file.")
-        if len(cv) > MAX_CV_BYTES:
-            raise Problem("Your CV is over 5 MB. Upload a smaller file.")
-        cv_type = cv_type.split(";")[0].strip() or "application/octet-stream"
-        if cv_type not in CV_TYPES:
-            raise Problem("Upload your CV as a PDF, Word or text file.")
+        if cv:
+            cv_type = self._check_cv(cv, cv_type)
+        needs_face = bool(round.get("identityCheck"))
+        if needs_face:
+            if not photo:
+                raise Problem("Upload a clear photo of your face for the identity check.")
+            if not face_consent:
+                raise Problem("Agree to the identity check to book.")
+        if photo and (not photo_type.startswith("image/") or len(photo) > 5 * 1024 * 1024):
+            raise Problem("Your photo must be a JPEG or PNG under 5 MB.")
         slot = next((s for s in round["slots"] if s["id"] == slot_id), None)
         if not slot or slot.get("candidateId") or not self.store.create("booking", f"{round['id']}#{slot_id}", {"at": engine.now()}):
             raise Problem("That slot was just taken. Pick another.", 409)
 
         job = self._get("job", round["jobId"], "job")
-        cid = new_id("cand")
-        key = f"cv/{round['orgId']}/{cid}/{re.sub(r'[^A-Za-z0-9._-]', '_', cv_name)[-80:] or 'cv'}"
-        self.blobs.save(key, cv, cv_type)
-        read = engine.read_cv(self.nova, cv, cv_type, job)
-        c = {"id": cid, "orgId": round["orgId"], "jobId": round["jobId"], "roundId": round["id"], "name": name.strip()[:120],
-             "email": email.strip().lower()[:200], "cvName": cv_name[:120], "cvKey": key, "cvSummary": read["summary"], "skills": read["skills"],
-             "status": "scheduled", "createdAt": engine.now()}
+        approved = bool(invited) or not round.get("requireApproval")
+        c = invited or {"id": new_id("cand"), "orgId": round["orgId"], "jobId": round["jobId"], "roundId": round["id"], "createdAt": engine.now()}
+        c.update(name=name.strip()[:120], email=email.strip().lower()[:200], phone=phone.strip()[:30], status="scheduled" if approved else "pending_approval")
+        if cv:
+            self._save_cv(c, job, cv, cv_name, cv_type)
+        if photo:
+            c["photoKey"] = f"faces/{c['orgId']}/{c['id']}/reference"
+            self.blobs.save(c["photoKey"], photo, photo_type)
         self.save_candidate(c)
-        iv = {"id": f"iv_{secrets.token_urlsafe(18)}", "orgId": round["orgId"], "jobId": round["jobId"], "roundId": round["id"], "candidateId": cid,
+        if invited:
+            self.store.delete("candidate-invite", token or "")
+        iv = {"id": f"iv_{secrets.token_urlsafe(18)}", "orgId": round["orgId"], "jobId": round["jobId"], "roundId": round["id"], "candidateId": c["id"],
               "slotStart": slot["start"], "status": "scheduled", "turns": [], "snapshots": []}
         self.save_interview(iv)
         fresh = self._get("round", round["id"], "round")  # re-read so a concurrent slot edit isn't lost
-        for s in fresh["slots"]:
-            if s["id"] == slot_id:
-                s["candidateId"] = cid
+        for x in fresh["slots"]:
+            if x["id"] == slot_id:
+                x["candidateId"] = c["id"]
         self.save_round(fresh)
-        org = self.org(round["orgId"])
+        if approved:
+            self._email_interview_link(c, iv, job, round)
+        else:
+            org = self.org(round["orgId"])
+            self._email(c["email"], f"{org['name']} received your application",
+                        f"Hi {c['name'].split()[0]},\n\nThanks for applying for {job['title']}. {org['name']}'s team will review your profile. "
+                        f"Once they approve it, we'll email your interview link for {slot['start'].replace('T', ' ')[:16]} UTC.\n\nIntervwd, on behalf of {org['name']}")
+        return {"interviewId": iv["id"] if approved else None, "status": c["status"], "candidate": c, "interview": iv, "job": job, "round": fresh}
+
+    def _email_interview_link(self, c: Doc, iv: Doc, job: Doc, round: Doc) -> None:
+        org = self.org(c["orgId"])
+        check = " You'll be asked to look at the camera for a quick identity check first." if round.get("identityCheck") else ""
         self._email(c["email"], f"Your {org['name']} interview is booked",
-                    f"Hi {c['name'].split()[0]},\n\nYour interview for {job['title']} ({round['name']}) is booked for {slot['start'].replace('T', ' ')[:16]} UTC.\n\n"
-                    f"Join here when you're ready (Chrome or Edge, in a quiet room): {self.app_url}/interview/{iv['id']}\n\n"
+                    f"Hi {c['name'].split()[0]},\n\nYour interview for {job['title']} ({round['name']}) is booked for {iv['slotStart'].replace('T', ' ')[:16]} UTC.\n\n"
+                    f"Join here when you're ready (Chrome or Edge, in a quiet room):{check}\n{self.app_url}/interview/{iv['id']}\n\n"
                     f"This link is personal to you; don't share it.\n\nIntervwd, on behalf of {org['name']}")
-        return {"interviewId": iv["id"], "candidate": c, "interview": iv, "job": job, "round": fresh}
+
+    def review_signup(self, org_id: str, candidate_id: str, approve: bool, by: str) -> Doc:
+        c = self._owned("candidate", candidate_id, org_id, "candidate")
+        if c["status"] != "pending_approval":
+            raise Problem(f"{c['name']}'s profile isn't waiting for approval.", 409)
+        iv = next((i for i in self.interviews(org_id) if i["candidateId"] == candidate_id and i["status"] == "scheduled"), None)
+        round, job = self._get("round", c["roundId"], "round"), self._get("job", c["jobId"], "job")
+        c.update(status="scheduled" if approve else "declined", reviewedBy=by, reviewedAt=engine.now())
+        self.save_candidate(c)
+        if approve and iv:
+            self._email_interview_link(c, iv, job, round)
+        elif not approve:
+            org = self.org(org_id)
+            if iv:  # free the slot for someone else
+                round["slots"] = [{k: v for k, v in x.items() if not (k == "candidateId" and v == candidate_id)} for x in round["slots"]]
+                self.save_round(round)
+                self.store.delete("interview", iv["id"])
+            self._purge_faces(c, [])
+            self._email(c["email"], f"Your application to {org['name']}",
+                        f"Hi {c['name'].split()[0]},\n\nThank you for your interest in {job['title']}. {org['name']} has decided not to move forward with an interview "
+                        f"this time.\n\nIntervwd, on behalf of {org['name']}")
+        return c
+
+    # ---------- Identity check (see faces.py) ----------
+
+    def verify_identity(self, interview_id: str, image: bytes, content_type: str) -> Doc:
+        from .faces import MAX_ATTEMPTS
+
+        iv, round, c, _, _ = self._ctx(interview_id)
+        if not round.get("identityCheck"):
+            return {"status": "not_required"}
+        ident = iv.get("identity") or {"status": "pending", "attempts": 0}
+        if ident["status"] in ("matched", "approved"):
+            return {"status": ident["status"], "similarity": ident.get("similarity")}
+        if ident["status"] == "locked":
+            return {"status": "locked", "message": "The identity check didn't match. The team has been told and can let you in."}
+        if not content_type.startswith("image/") or not image or len(image) > 2 * 1024 * 1024:
+            raise Problem("Send a camera image under 2 MB.")
+        ref = self.blobs.load(c["photoKey"]) if c.get("photoKey") else None
+        if not ref:
+            raise Problem("Your profile photo is missing. Ask the company to let you in.", 409)
+        result = self.faces.compare(ref[0], image)
+        key = f"faces/{c['orgId']}/{c['id']}/live-{ident['attempts']}"
+        self.blobs.save(key, image, content_type)
+        ident.update(attempts=ident["attempts"] + 1, similarity=result.similarity, lastResult=result.status, checkedAt=engine.now(), liveKey=key)
+        if result.status == "matched":
+            ident["status"] = "matched"
+        elif ident["attempts"] >= MAX_ATTEMPTS:
+            ident["status"] = "locked"
+            org = self.org(c["orgId"])
+            self._email(c["email"], f"Your {org['name']} interview: identity check",
+                        f"Hi {c['name'].split()[0]},\n\nThe camera check didn't match your profile photo. {org['name']}'s team can review it and let you in, "
+                        f"or reschedule. You don't need to do anything else.\n\nIntervwd")
+        iv["identity"] = ident
+        self.save_interview(iv)
+        left = max(0, MAX_ATTEMPTS - ident["attempts"])
+        msg = {"matched": "Thanks, that's you.", "no_face": result.detail, "error": result.detail}.get(result.status, result.detail)
+        if ident["status"] == "locked":
+            msg = "The identity check didn't match. The team has been told and can let you in."
+        return {"status": ident["status"], "result": result.status, "similarity": result.similarity, "attemptsLeft": left, "message": msg}
+
+    def approve_identity(self, org_id: str, candidate_id: str, by: str) -> Doc:
+        ivs = [i for i in self.interviews(org_id) if i["candidateId"] == candidate_id and i["status"] != "completed"]
+        if not ivs:
+            raise Problem("There's no upcoming interview to let them into.", 409)
+        iv = ivs[-1]
+        iv["identity"] = {**(iv.get("identity") or {"attempts": 0}), "status": "approved", "approvedBy": by, "approvedAt": engine.now()}
+        self.save_interview(iv)
+        return iv["identity"]
+
+    def _purge_faces(self, c: Doc, ivs: list[Doc]) -> None:
+        """Face images are kept only until a decision is made."""
+        if c.pop("photoKey", None):
+            self.blobs.delete(f"faces/{c['orgId']}/{c['id']}/reference")
+            c["photoDeleted"] = True
+            self.save_candidate(c)
+        for iv in ivs:
+            ident = iv.get("identity") or {}
+            for n in range(int(ident.get("attempts", 0))):
+                self.blobs.delete(f"faces/{c['orgId']}/{c['id']}/live-{n}")
+            if ident.pop("liveKey", None):
+                self.save_interview(iv)
+
+    # ---------- Interview ----------
 
     def _ctx(self, interview_id: str) -> tuple[Doc, Doc, Doc, Doc, Doc]:
         iv = self._get("interview", interview_id, "interview")
@@ -413,13 +588,24 @@ class Service:
         iv, round, c, job, org = self._ctx(interview_id)
         public = self._public_interview(iv)
         public["snapshots"] = []  # candidates don't need their own snapshots back
+        ident = iv.get("identity") or {}
+        public.pop("identity", None)
         return {"interview": public, "candidateName": c["name"], "orgName": org["name"], "job": {"id": job["id"], "title": job["title"]},
-                "round": {k: round[k] for k in ("id", "name", "durationMin", "questions")}}
+                "round": {k: round[k] for k in ("id", "name", "durationMin", "questions")},
+                "candidateStatus": c["status"],
+                "identity": {"required": bool(round.get("identityCheck")), "status": ident.get("status", "pending"),
+                             "attemptsLeft": max(0, 3 - int(ident.get("attempts", 0)))}}
 
     def start_interview(self, interview_id: str) -> Doc:
         iv, round, c, job, org = self._ctx(interview_id)
         if iv["status"] == "completed":
             raise Problem("This interview has already finished.", 409)
+        if c["status"] == "pending_approval":
+            raise Problem(f"{org['name']} hasn't approved your profile yet. We'll email you when they do.", 403)
+        if c["status"] == "declined":
+            raise Problem("This interview was cancelled.", 403)
+        if round.get("identityCheck") and (iv.get("identity") or {}).get("status") not in ("matched", "approved"):
+            raise Problem("Complete the identity check first.", 403)
         ctx = self.search(iv, f"{job['title']} {' '.join(round['questions'])}", ("interviewer",), 6)
         turns = engine.start(self.nova, iv, round, job, c, org["name"], ctx)
         self.save_interview(iv)
@@ -456,7 +642,14 @@ class Service:
             raise Problem("Snapshots must be small images.")
         key = f"snapshots/{iv['orgId']}/{iv['id']}/{len(iv['snapshots'])}.jpg"
         self.blobs.save(key, image, content_type)
-        iv["snapshots"].append({"at": engine.now(), "key": key})
+        snap: Doc = {"at": engine.now(), "key": key}
+        # Compare against the profile photo too, to catch someone else taking over mid-interview.
+        c = self.store.get("candidate", iv["candidateId"]) or {}
+        ref = self.blobs.load(c["photoKey"]) if c.get("photoKey") else None
+        if ref:
+            m = self.faces.compare(ref[0], image)
+            snap.update(match=m.status, similarity=m.similarity)
+        iv["snapshots"].append(snap)
         self.save_interview(iv)
 
     def snapshot(self, org_id: str, interview_id: str, n: int) -> tuple[bytes, str]:
@@ -464,12 +657,20 @@ class Service:
         snaps = iv.get("snapshots", [])
         if not 0 <= n < len(snaps):
             raise Problem("That snapshot doesn't exist.", 404)
-        if snaps[n].get("url", "").startswith("data:"):  # seeded demo snapshots
-            import base64
-
-            head, b64 = snaps[n]["url"].split(",", 1)
-            return base64.b64decode(b64), head[5:].split(";")[0]
         got = self.blobs.load(snaps[n]["key"])
         if not got:
             raise Problem("That snapshot has expired.", 404)
+        return got
+
+    def face_image(self, org_id: str, candidate_id: str, which: str) -> tuple[bytes, str]:
+        """The profile photo or the latest live identity check, for the recruiter to compare."""
+        c = self._owned("candidate", candidate_id, org_id, "candidate")
+        if which == "reference":
+            key = c.get("photoKey")
+        else:
+            ivs = [i for i in self.interviews(org_id) if i["candidateId"] == candidate_id and (i.get("identity") or {}).get("liveKey")]
+            key = ivs[-1]["identity"]["liveKey"] if ivs else None
+        got = self.blobs.load(key) if key else None
+        if not got:
+            raise Problem("That photo is no longer kept.", 404)
         return got

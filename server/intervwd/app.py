@@ -24,6 +24,7 @@ from . import seed
 from . import store as store_mod
 from .assistant import Assistant
 from .auth import DEMO_EMAIL, Auth, Mailer, OAuthError, current_session
+from .faces import FaceMatcher, FakeMatcher, RekognitionMatcher
 from .mcp_server import create_server
 from .service import Problem, Service
 
@@ -87,13 +88,15 @@ def base_url(scope: Any) -> str:
 
 
 def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | None = None, nova: nova_mod.Nova | None = None,
-               mailer: Mailer | None = None, demo_code: str | None = None, kb: knowledge_mod.Knowledge | None = None) -> Starlette:
+               mailer: Mailer | None = None, demo_code: str | None = None, kb: knowledge_mod.Knowledge | None = None,
+               faces: FaceMatcher | None = None) -> Starlette:
     if store is None or blobs is None:
         env_store, env_blobs = store_mod.from_env()
         store, blobs = store or env_store, blobs or env_blobs
     nova = nova or nova_mod.from_env()
     mailer = mailer or Mailer()
-    svc = Service(store, blobs, nova, os.environ.get("APP_URL", "https://intervwd.com"), mailer, kb or knowledge_mod.from_env())
+    faces = faces or (RekognitionMatcher() if os.environ.get("ORIGIN_SECRET") else FakeMatcher())
+    svc = Service(store, blobs, nova, os.environ.get("APP_URL", "https://intervwd.com"), mailer, kb or knowledge_mod.from_env(), faces)
     auth = Auth(store, mailer, demo_code)
     assistant = Assistant(svc, nova)
     mcp = create_server(svc)
@@ -249,6 +252,11 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
         c = view["candidate"] = dict(view["candidate"])
         if c.pop("cvKey", None):
             c["cvUrl"] = sign(f"/api/candidates/{c['id']}/cv")
+        if c.get("hasPhoto"):
+            c["photoUrl"] = sign(f"/api/candidates/{c['id']}/face/reference")
+        for iv in view["interviews"]:
+            if (iv.get("identity") or {}).get("hasLive"):
+                iv["identity"]["liveUrl"] = sign(f"/api/candidates/{c['id']}/face/live")
         return view
 
     @route("/api/candidates/{candidate_id}/cv", ["GET"])
@@ -261,6 +269,33 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
             raise Problem("That CV is no longer available.", 404)
         name = urllib.parse.quote(c["cvName"])
         return Response(got[0], media_type=got[1], headers={"Content-Disposition": f"inline; filename*=UTF-8''{name}", "Cache-Control": "private, max-age=600"})
+
+    @route("/api/jobs/{job_id}/candidates", ["POST"], recruiter=True)
+    async def add_candidate(request: Request, s: Doc) -> Doc:
+        async with request.form(max_files=1, max_fields=8, max_part_size=6 * 1024 * 1024) as form:
+            cv, cv_name, cv_type = await upload(form, "cv")
+            out = svc.add_candidate(s["orgId"], request.path_params["job_id"], str(form.get("roundId", "")), str(form.get("name", "")),
+                                    str(form.get("email", "")), s["name"], cv, cv_name, cv_type)
+        return {"id": out["candidate"]["id"], "link": out["link"]}
+
+    @route("/api/candidates/{candidate_id}/signup", ["POST"], recruiter=True)
+    async def review_signup(request: Request, s: Doc) -> Doc:
+        c = svc.review_signup(s["orgId"], request.path_params["candidate_id"], bool((await body(request)).get("approve")), s["name"])
+        return {"ok": True, "status": c["status"]}
+
+    @route("/api/candidates/{candidate_id}/identity/approve", ["POST"], recruiter=True)
+    async def approve_identity(request: Request, s: Doc) -> Doc:
+        return svc.approve_identity(s["orgId"], request.path_params["candidate_id"], s["name"])
+
+    @route("/api/candidates/{candidate_id}/face/{which}", ["GET"])
+    async def face(request: Request) -> Response:
+        if not signed_ok(request) or request.path_params["which"] not in ("reference", "live"):
+            raise Problem("This link has expired. Reload the page.", 403)
+        c = store.get("candidate", request.path_params["candidate_id"])
+        if not c:
+            raise Problem("That photo doesn't exist.", 404)
+        data, kind = svc.face_image(c["orgId"], c["id"], request.path_params["which"])
+        return Response(data, media_type=kind, headers={"Cache-Control": "private, no-store"})
 
     @route("/api/candidates/{candidate_id}/decision", ["POST"], recruiter=True)
     async def decision(request: Request, s: Doc) -> Doc:
@@ -284,21 +319,34 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
 
     # ---------- Candidate (the interview id is the candidate's secret link) ----------
 
+    async def upload(form: Any, name: str) -> tuple[bytes, str, str]:
+        f = form.get(name)
+        if f is None or not hasattr(f, "read"):
+            return b"", "", ""
+        return await f.read(), f.filename or name, f.content_type or ""
+
     @route("/api/invites/{code}", ["GET"])
     async def invite(request: Request) -> Doc:
-        return svc.invite(request.path_params["code"])
+        return svc.invite(request.path_params["code"], request.query_params.get("t") or None)
 
     @route("/api/invites/{code}/join", ["POST"])
     async def join(request: Request) -> Doc:
-        async with request.form(max_files=1, max_fields=10, max_part_size=6 * 1024 * 1024) as form:
-            cv = form.get("cv")
-            data = await cv.read() if cv is not None and hasattr(cv, "read") else b""
+        async with request.form(max_files=2, max_fields=14, max_part_size=6 * 1024 * 1024) as form:
+            cv, cv_name, cv_type = await upload(form, "cv")
+            photo, _, photo_type = await upload(form, "photo")
+            yes = lambda k: str(form.get(k, "")).lower() == "true"  # noqa: E731
             out = svc.join(
                 request.path_params["code"], str(form.get("name", "")), str(form.get("email", "")), str(form.get("slotId", "")),
-                str(form.get("consent", "")).lower() == "true", data,
-                getattr(cv, "filename", None) or "cv", getattr(cv, "content_type", None) or "",
+                yes("consent"), cv, cv_name or "cv", cv_type, photo, photo_type, yes("faceConsent"), str(form.get("phone", "")),
+                str(form.get("t", "")) or None,
             )
-        return {"interviewId": out["interviewId"]}
+        return {"interviewId": out["interviewId"], "status": out["status"]}
+
+    @route("/api/interviews/{interview_id}/verify", ["POST"])
+    async def verify(request: Request) -> Doc:
+        async with request.form(max_files=1, max_fields=2, max_part_size=2 * 1024 * 1024) as form:
+            image, _, kind = await upload(form, "image")
+            return svc.verify_identity(request.path_params["interview_id"], image, kind)
 
     @route("/api/interviews/{interview_id}", ["GET"])
     async def room(request: Request) -> Doc:
