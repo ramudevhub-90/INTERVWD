@@ -247,3 +247,20 @@ def briefing(svc: Service, s: Doc, tz_offset_min: int = 0) -> Doc:
         parts.append(f"Want to hear {names.get(finished[0]['candidateId'], {}).get('name', 'their').split()[0]}'s report?")
     svc.store.put("briefing", key, {"at": now()})
     return {"say": " ".join(parts), "finished": len(finished), "pendingApproval": pending, "identityLocked": locked}
+
+
+def hiring_day(svc: Service, s: Doc, tz_offset_min: int = 0) -> Doc:
+    """Today at the office: arrivals, interviews running in rooms, finished, no-shows."""
+    day = svc.hiring_day(s["orgId"])
+    k = day["counts"]
+    if not day["rows"]:
+        return {"say": "There are no interviews at the office today.", **day}
+    rooms = [f"{r['name']} in {r['room']}" for r in day["rows"] if r["state"] == "in_room"]
+    parts = [f"Today at the office: {k['done']} interviewed, {k['in_room']} in a room now, {k['arrived']} waiting at reception, "
+             f"{k['expected']} still expected and {k['no_show']} no-show{'s' if k['no_show'] != 1 else ''}."]
+    if rooms:
+        parts.append("Right now: " + ", ".join(rooms) + ".")
+    done = sorted((r for r in day["rows"] if r["state"] == "done" and r["overall"] is not None), key=lambda r: -r["overall"])
+    if done:
+        parts.append(f"Best so far: {done[0]['name']}, {done[0]['overall']}.")
+    return {"say": " ".join(parts), **day}

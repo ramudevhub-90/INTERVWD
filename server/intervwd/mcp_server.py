@@ -88,6 +88,12 @@ def create_server(svc: Service) -> MCPServer:
         Use for "what's new", "good morning", "any updates"."""
         return call(tools.briefing)
 
+    @mcp.tool(title="How the hiring day is going", annotations=READ)
+    def get_hiring_day() -> dict[str, Any]:
+        """Today at the office: candidates who checked in with Alexa at reception, who is interviewing in
+        which room (Echo Show rooms), who's finished (best score first) and no-shows."""
+        return call(tools.hiring_day)
+
     @mcp.tool(title="Who needs approval", annotations=READ)
     def list_pending_approvals() -> dict[str, Any]:
         """Candidate sign-ups waiting for approval, and interviews locked because the identity check

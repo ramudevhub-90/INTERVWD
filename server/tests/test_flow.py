@@ -287,10 +287,10 @@ def test_matching_face_starts_and_photos_are_deleted_after_decision(env):
 def test_signup_needs_approval(env):
     client, outbox = env
     h = demo_login(client)
-    r = book(client, "nw-storeops-r1", open_slot(client, h, "round_storeops_1"))
+    r = book(client, "nw-analyst-r1", open_slot(client, h, "round_analyst_1"))
     assert r.json() == {"interviewId": None, "status": "pending_approval"}
     svc = client.app.state.svc
-    cid = next(c["id"] for c in svc.candidates("job_storeops") if c["name"] == "Kiran Rao")
+    cid = next(c["id"] for c in svc.candidates("job_analyst") if c["name"] == "Kiran Rao")
     iv = next(i for i in svc.interviews("org_northwind") if i["candidateId"] == cid)["id"]
     assert client.post(f"/api/interviews/{iv}/start").status_code == 403
     assert not any(iv in m[2] for m in outbox.sent)  # no interview link until approved
@@ -513,3 +513,40 @@ def test_built_in_video_call(env):
     assert any(f"/interview/{iv}" in m[2] for m in outbox.sent if m[0] == "kiran@example.com")  # candidate's join link
     ai_iv = book(client, "nw-backend-r1", open_slot(client, h, "round_backend_1")).json()["interviewId"]
     assert client.post(f"/api/interviews/{ai_iv}/call").status_code == 409  # AI rounds have no call
+
+
+def test_hiring_day_at_the_office(env):
+    client, outbox = env
+    h = demo_login(client)
+    svc = client.app.state.svc
+    from intervwd.seed import DEMO_KIOSK
+    # Book the office round for a slot starting now.
+    start = datetime.now(timezone.utc).isoformat()
+    slot = client.post("/api/rounds/round_storeops_1/slots", headers=h, json={"starts": [(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()]}).json()["slots"]
+    slot = next(x["id"] for x in slot if not x.get("candidateId") and x["start"] >= start[:16])
+    iv = book(client, "northwind-labs~store-operations-manager-r1", slot).json()["interviewId"]
+    mail = next(m for m in outbox.sent if m[0] == "kiran@example.com" and "booked" in m[1])
+    assert "Prestige Tech Park" in mail[2] and "I'm here for my interview" in mail[2]
+    assert client.get(f"/api/kiosk/{DEMO_KIOSK}").json()["rooms"] == ["Room 1", "Room 2"]
+    assert client.get("/api/kiosk/wrong-token").status_code == 404
+
+    # Reception: name, identity check, then a room.
+    assert client.post(f"/api/kiosk/{DEMO_KIOSK}/checkin", json={"name": "Nobody Here"}).status_code == 404
+    found = client.post(f"/api/kiosk/{DEMO_KIOSK}/checkin", json={"name": "kiran"}).json()
+    assert found["interviewId"] == iv and found["identityRequired"]
+    assert client.post(f"/api/kiosk/{DEMO_KIOSK}/arrive", json={"interviewId": iv}).status_code == 403  # face check first
+    client.post(f"/api/interviews/{iv}/verify", files={"image": ("live.jpg", FACE, "image/jpeg")})
+    sent_to = client.post(f"/api/kiosk/{DEMO_KIOSK}/arrive", json={"interviewId": iv}).json()
+    assert sent_to["room"] == "Room 1"
+    # Room 1's Echo Show picks them up; Room 2 has nobody.
+    assert client.get(f"/api/kiosk/{DEMO_KIOSK}/room/Room%201").json()["interviewId"] == iv
+    assert client.get(f"/api/kiosk/{DEMO_KIOSK}/room/Room%202").json()["interviewId"] is None
+    day = client.get("/api/hiring-day", headers=h).json()
+    assert day["counts"]["arrived"] >= 1 and any(r["interviewId"] == iv and r["room"] == "Room 1" for r in day["rows"])
+    # Office rounds need an office.
+    other = client.post("/api/orgs", json={"orgName": "No Office Co", "name": "A B", "email": "ab@x.test"})
+    code = re.search(r"\b(\d{6})\b", outbox.sent[-1][2]).group(1)
+    oh = {"Authorization": f"Bearer {client.post('/api/auth/verify', json={'email': 'ab@x.test', 'code': code}).json()['token']}"}
+    job = client.post("/api/jobs", headers=oh, json={"title": "Cashier", "location": "", "description": "Serve customers at our store every day."}).json()["id"]
+    r = client.post(f"/api/jobs/{job}/rounds", headers=oh, json={"name": "Walk-in", "location": "office", "criteria": [{"name": "x", "description": "y"}], "questions": ["a?", "b?"]})
+    assert r.status_code == 409

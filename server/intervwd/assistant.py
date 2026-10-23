@@ -44,6 +44,8 @@ SPECS: list[Doc] = [
                               "required": ["job_title", "starts"]}}},
     {"name": "get_briefing", "description": "What's new since the recruiter last asked: finished interviews, approvals waiting, identity problems, and the next interview. Use for 'what's new', 'good morning', 'any updates'.",
      "inputSchema": {"json": {"type": "object", "properties": {}}}},
+    {"name": "get_hiring_day", "description": "Today at the office: candidates who arrived, who is interviewing in which room, who's done, and no-shows.",
+     "inputSchema": {"json": {"type": "object", "properties": {}}}},
     {"name": "list_pending_approvals", "description": "Sign-ups waiting for the recruiter's approval, and interviews locked by a failed identity check.",
      "inputSchema": {"json": {"type": "object", "properties": {}}}},
     {"name": "review_signup", "description": "Approve or decline a candidate's sign-up. Call with confirm=false first to read back; confirm=true only after the recruiter says yes.",
@@ -69,6 +71,7 @@ def run_tool(svc: Service, session: Doc, name: str, args: Doc, tz_offset_min: in
         "get_invite_link": lambda: tools.get_invite_link(svc, session, args.get("job_title"), args.get("round_number")),
         "add_interview_slots": lambda: tools.add_interview_slots(svc, session, str(args.get("job_title", "")), list(args.get("starts", [])), int(args.get("round_number") or 1)),
         "get_briefing": lambda: tools.briefing(svc, session, tz_offset_min),
+        "get_hiring_day": lambda: tools.hiring_day(svc, session, tz_offset_min),
         "list_pending_approvals": lambda: tools.pending_approvals(svc, session),
         "review_signup": lambda: tools.review_signup(svc, session, str(args.get("candidate_name", "")), bool(args.get("approve", True)), bool(args.get("confirm"))),
         "let_candidate_in": lambda: tools.let_in(svc, session, str(args.get("candidate_name", "")), bool(args.get("confirm"))),
@@ -163,6 +166,8 @@ class Assistant:
             doc.pop("pending")
             return {"text": "Okay, I won't change anything."}
 
+        if re.search(r"\b(hiring day|office|reception|rooms?|no.?shows?|walk.?ins?)\b", text):
+            return run("get_hiring_day")
         if re.search(r"\b(what'?s new|good morning|any updates?|brief me|catch me up|what did i miss)\b", text):
             return run("get_briefing")
         if named and re.search(r"\b(approve|accept)\b", text):

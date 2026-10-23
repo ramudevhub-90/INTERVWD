@@ -16,6 +16,7 @@ from .service import Service
 
 Doc = dict[str, Any]
 DEMO_ORG = "org_northwind"
+DEMO_KIOSK = "northwind-demo-kiosk"  # the demo company's reception and room screens: /kiosk/northwind-demo-kiosk
 
 
 def _at(hours: float) -> str:
@@ -73,7 +74,10 @@ def reset_demo(svc: Service) -> None:
     s = svc.store
     _clear_extras(svc)
     tag = secrets.token_hex(2)  # fresh slot ids each time, so old bookings never block reseeded slots
-    s.put("org", DEMO_ORG, {"id": DEMO_ORG, "name": "Northwind Labs", "slug": "northwind-labs", "createdAt": _at(-24 * 30), "seededAt": now()})
+    s.put("org", DEMO_ORG, {"id": DEMO_ORG, "name": "Northwind Labs", "slug": "northwind-labs", "createdAt": _at(-24 * 30), "seededAt": now(),
+                            "office": {"address": "Northwind Labs, 4th floor, Prestige Tech Park, Bengaluru 560103", "rooms": ["Room 1", "Room 2"]},
+                            "kioskToken": DEMO_KIOSK})
+    s.put("kiosk", DEMO_KIOSK, {"orgId": DEMO_ORG})
     s.put("org-slug", "northwind-labs", {"orgId": DEMO_ORG})
     s.put("recruiter", DEMO_EMAIL, {"email": DEMO_EMAIL, "name": "Priya Sharma", "orgId": DEMO_ORG, "verified": True})
 
@@ -89,7 +93,9 @@ def reset_demo(svc: Service) -> None:
         path = {"round_backend_1": "backend-engineer-r1", "round_backend_2": "backend-engineer-r2",
                 "round_storeops_1": "store-operations-manager-r1", "round_analyst_1": "data-analyst-r1"}[rid]
         r = {"id": rid, "jobId": job, "orgId": DEMO_ORG, "index": index, "name": name, "durationMin": 20, "criteria": criteria, "questions": questions,
-             "identityCheck": rid in ("round_backend_1", "round_storeops_1"), "requireApproval": rid == "round_storeops_1",
+             # Store Ops is a hiring day at the office (reception check-in, Echo Show rooms); Data Analyst shows approvals.
+             "identityCheck": rid in ("round_backend_1", "round_storeops_1"), "requireApproval": rid == "round_analyst_1",
+             "location": "office" if rid == "round_storeops_1" else "online",
              "publicPath": f"northwind-labs/{path}",
              "decisionMode": "auto" if rid == "round_backend_1" else "human", "autoAdvance": {"minOverall": 4.0, "minEach": 3.0},
              # Backend: Round 1 by the AI, Round 2 a system design call with a person.

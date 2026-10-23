@@ -128,7 +128,32 @@ class Service:
 
     def settings(self, org_id: str) -> Doc:
         org = self.org(org_id)
-        return {"orgName": org["name"], "slug": self.org_slug(org), "locked": org_id == "org_northwind"}
+        office = org.get("office") or {"address": "", "rooms": []}
+        return {"orgName": org["name"], "slug": self.org_slug(org), "locked": org_id == "org_northwind", "office": office,
+                "kiosk": f"{self.app_url}/kiosk/{org['kioskToken']}" if org.get("kioskToken") else None}
+
+    def save_office(self, org_id: str, address: str, rooms: list[str]) -> Doc:
+        org = self.org(org_id)
+        rooms = [r.strip()[:40] for r in rooms if str(r).strip()][:20]
+        if len(address.strip()) < 5:
+            raise Problem("Enter the office address candidates should come to.")
+        if not rooms:
+            raise Problem("Add at least one interview room with an Echo Show.")
+        if len(set(r.lower() for r in rooms)) != len(rooms):
+            raise Problem("Give each interview room a different name.")
+        org["office"] = {"address": address.strip()[:300], "rooms": rooms}
+        self.store.put("org", org_id, org)
+        return self.settings(org_id)
+
+    def new_kiosk(self, org_id: str) -> Doc:
+        """The secret link an Echo Show at reception (and in each room) opens. Making a new one retires the old."""
+        org = self.org(org_id)
+        if org.get("kioskToken"):
+            self.store.delete("kiosk", org["kioskToken"])
+        org["kioskToken"] = secrets.token_urlsafe(16)
+        self.store.put("kiosk", org["kioskToken"], {"orgId": org_id})
+        self.store.put("org", org_id, org)
+        return self.settings(org_id)
 
     def change_slug(self, org_id: str, wanted: str) -> Doc:
         """Renames the company's links. Old links keep working, and the old name stays reserved for this
@@ -284,6 +309,9 @@ class Service:
             raise Problem("Add at least one thing to assess.")
         if len(questions) < 2:
             raise Problem("Add at least two questions.")
+        location = "office" if body.get("location") == "office" else "online"
+        if location == "office" and not (self.org(org_id).get("office") or {}).get("rooms"):
+            raise Problem("Add your office address and interview rooms in Settings first.", 409)
         meeting_url = str(body.get("meetingUrl") or "").strip()[:500]
         interviewers = [{"name": str(i.get("name", "")).strip()[:120], "email": str(i.get("email", "")).strip().lower()[:200]}
                         for i in (body.get("interviewers") or []) if str(i.get("name", "")).strip()][:5]
@@ -310,6 +338,7 @@ class Service:
                  "publicPath": f"{org_slug}/{round_slug}",
                  # Who interviews: the AI by voice, or a person over a video call with a scorecard.
                  "mode": "human" if body.get("mode") == "human" else "ai",
+                 "location": location,
                  "meetingUrl": meeting_url,
                  "interviewers": interviewers,
                  "decisionMode": "auto" if body.get("decisionMode") == "auto" and body.get("mode") != "human" else "human",
@@ -499,7 +528,9 @@ class Service:
             "orgName": self.org(round["orgId"])["name"],
             "job": self._get("job", round["jobId"], "job"),
             "round": {k: round.get(k) for k in ("id", "name", "index", "durationMin", "publicPath", "meetingUrl")}
-            | {"mode": round.get("mode", "ai"), "interviewers": [i["name"] for i in round.get("interviewers", [])]}
+            | {"mode": round.get("mode", "ai"), "interviewers": [i["name"] for i in round.get("interviewers", [])],
+               "location": round.get("location", "online"),
+               "address": (self.org(round["orgId"]).get("office") or {}).get("address", "") if round.get("location") == "office" else ""}
             | {"identityCheck": bool(round.get("identityCheck")), "requireApproval": bool(round.get("requireApproval")) and not invited},
             "openSlots": [s for s in round["slots"] if not s.get("candidateId") and _parse(s["start"]).timestamp() > cutoff],
             **({"invited": {"name": invited["name"], "email": invited["email"], "hasCv": bool(invited.get("cvKey")),
@@ -609,6 +640,18 @@ class Service:
         organizer = (org["name"], (self.mailer.sender.split("<")[-1].rstrip(">") if self.mailer and self.mailer.sender else "no-reply@intervwd.com"))
         title = f"{org['name']} interview: {job['title']}, {round['name'].split(' · ')[0]}"
         candidate_link = f"{self.app_url}/interview/{iv['id']}"
+        if round.get("location") == "office":
+            address = (org.get("office") or {}).get("address", "our office")
+            with_whom = ", ".join(i["name"] for i in round.get("interviewers", [])) if round.get("mode") == "human" else "Alexa, our AI interviewer, on an Echo Show"
+            invite = ical.invite(f"{iv['id']}@intervwd.com", iv["slotStart"], minutes, title,
+                                 f"At {address}. When you arrive, say to the Echo Show at reception: \"Alexa, I'm here for my interview.\"", address,
+                                 organizer, [(c["name"], c["email"])])
+            check = " It checks your face against your profile photo, then shows you to your room." if round.get("identityCheck") else " It shows you to your room."
+            self._email(c["email"], f"Your {org['name']} interview is booked",
+                        f"Hi {c['name'].split()[0]},\n\nYour interview for {job['title']} ({round['name']}) is at our office on {when}, with {with_whom}.\n\n"
+                        f"Address: {address}\n\nWhen you arrive, say to the Echo Show at reception: \"Alexa, I'm here for my interview.\"{check}\n\n"
+                        f"The calendar invite is attached. Want to practise first? {self.app_url}/practice/{iv['id']}\n\nIntervwd, on behalf of {org['name']}", invite)
+            return
         if round.get("mode") == "human":
             people = round.get("interviewers", [])
             names = ", ".join(i["name"] for i in people) or f"the {org['name']} team"
@@ -659,6 +702,118 @@ class Service:
                         f"Hi {c['name'].split()[0]},\n\nThank you for your interest in {job['title']}. {org['name']} has decided not to move forward with an interview "
                         f"this time.\n\nIntervwd, on behalf of {org['name']}")
         return c
+
+    # ---------- At the office: reception check-in and interview rooms (Echo Show kiosks) ----------
+
+    def _kiosk_org(self, token: str) -> Doc:
+        ref = self.store.get("kiosk", token)
+        if not ref:
+            raise Problem("This Echo Show isn't set up for any company. Ask HR for the kiosk link.", 404)
+        return self.org(ref["orgId"])
+
+    def _office_today(self, org_id: str, hours: float = 4) -> list[Doc]:
+        now = datetime.now(timezone.utc).timestamp()
+        rounds: dict[str, Doc] = {}
+        out = []
+        for iv in self.interviews(org_id):
+            r = rounds.setdefault(iv["roundId"], self.store.get("round", iv["roundId"]) or {})
+            if r.get("location") == "office" and abs(_parse(iv["slotStart"]).timestamp() - now) < hours * 3600:
+                out.append(iv)
+        return out
+
+    def kiosk(self, token: str) -> Doc:
+        org = self._kiosk_org(token)
+        office = org.get("office") or {"address": "", "rooms": []}
+        return {"orgName": org["name"], "address": office["address"], "rooms": office["rooms"]}
+
+    def kiosk_checkin(self, token: str, name: str) -> Doc:
+        """'Alexa, I'm here for my interview.' Finds today's office booking by the name they say."""
+        org = self._kiosk_org(token)
+        want = re.sub(r"[^a-z ]", "", name.lower()).strip()
+        if len(want) < 2:
+            raise Problem("Tell me your name and I'll find your interview.")
+        matches = []
+        for iv in self._office_today(org["id"]):
+            if iv["status"] == "completed" or iv.get("arrivedAt"):
+                continue
+            c = self.store.get("candidate", iv["candidateId"]) or {}
+            full = c.get("name", "").lower()
+            if c.get("status") in ("pending_approval", "declined"):
+                continue
+            if want == full or want in full or full.split()[0] == want.split()[0]:
+                matches.append((iv, c))
+        if not matches:
+            raise Problem("I couldn't find an interview for that name today. Please check with the front desk.", 404)
+        if len(matches) > 1:
+            exact = [m for m in matches if m[1]["name"].lower() == want]
+            if len(exact) != 1:
+                raise Problem("More than one interview matches that name. Please say your full name.", 409)
+            matches = exact
+        iv, c = matches[0]
+        round = self._get("round", iv["roundId"], "round")
+        job = self._get("job", iv["jobId"], "job")
+        ident = (iv.get("identity") or {}).get("status", "pending")
+        return {"interviewId": iv["id"], "firstName": c["name"].split()[0], "jobTitle": job["title"], "roundName": round["name"],
+                "slotStart": iv["slotStart"], "identityRequired": bool(round.get("identityCheck")), "identityStatus": ident,
+                "withPerson": round.get("mode") == "human", "interviewers": [i["name"] for i in round.get("interviewers", [])]}
+
+    def kiosk_arrive(self, token: str, interview_id: str) -> Doc:
+        """After the identity check: record the arrival and send them to a free room (or ask them to wait)."""
+        org = self._kiosk_org(token)
+        iv = self._owned("interview", interview_id, org["id"], "interview")
+        round = self._get("round", iv["roundId"], "round")
+        if round.get("identityCheck") and (iv.get("identity") or {}).get("status") not in ("matched", "approved"):
+            raise Problem("Please finish the identity check first.", 403)
+        if not iv.get("arrivedAt"):
+            iv["arrivedAt"] = engine.now()
+        if round.get("mode") == "human":
+            iv["room"] = None  # an interviewer comes to collect them
+            self.save_interview(iv)
+            return {"room": None, "message": f"Thanks. {', '.join(i['name'] for i in round.get('interviewers', [])) or 'Your interviewer'} will come and collect you."}
+        iv["room"] = iv.get("room") or self._free_room(org)
+        self.save_interview(iv)
+        if iv["room"]:
+            return {"room": iv["room"], "message": f"Thanks. Please go to {iv['room']}. Alexa will interview you there."}
+        return {"room": None, "message": "Thanks. All rooms are busy right now. Please take a seat; this screen will call you."}
+
+    def _free_room(self, org: Doc) -> str | None:
+        busy = {iv.get("room") for iv in self._office_today(org["id"]) if iv.get("room") and iv["status"] != "completed"}
+        return next((r for r in (org.get("office") or {}).get("rooms", []) if r not in busy), None)
+
+    def kiosk_room(self, token: str, room: str) -> Doc:
+        """What an interview room's Echo Show should do now: run an interview, or wait for the next person."""
+        org = self._kiosk_org(token)
+        rooms = (org.get("office") or {}).get("rooms", [])
+        if room not in rooms:
+            raise Problem("That room isn't set up. Check the room names in Settings.", 404)
+        today = self._office_today(org["id"])
+        here = next((iv for iv in today if iv.get("room") == room and iv["status"] != "completed"), None)
+        if not here:  # take the next person waiting at reception
+            waiting = sorted((iv for iv in today if iv.get("arrivedAt") and not iv.get("room") and iv["status"] != "completed"
+                              and (self.store.get("round", iv["roundId"]) or {}).get("mode") != "human"), key=lambda iv: iv["arrivedAt"])
+            if waiting:
+                here = waiting[0]
+                here["room"] = room
+                self.save_interview(here)
+        if not here:
+            return {"room": room, "orgName": org["name"], "interviewId": None}
+        c = self.store.get("candidate", here["candidateId"]) or {}
+        return {"room": room, "orgName": org["name"], "interviewId": here["id"], "firstName": c.get("name", "").split(" ")[0]}
+
+    def hiring_day(self, org_id: str) -> Doc:
+        """Today at the office: who arrived, who's in a room, who's done, who didn't come."""
+        now = datetime.now(timezone.utc).timestamp()
+        rows = []
+        for iv in self._office_today(org_id, hours=12):
+            c = self.store.get("candidate", iv["candidateId"]) or {}
+            late = now - _parse(iv["slotStart"]).timestamp() > 30 * 60
+            state = ("done" if iv["status"] == "completed" else "in_room" if iv.get("room") and iv["status"] == "in_progress" else
+                     "arrived" if iv.get("arrivedAt") else "no_show" if late else "expected")
+            rows.append({"interviewId": iv["id"], "candidateId": c.get("id"), "name": c.get("name"), "slotStart": iv["slotStart"],
+                         "room": iv.get("room"), "state": state, "overall": (iv.get("report") or {}).get("overall")})
+        rows.sort(key=lambda r: r["slotStart"])
+        counts = {k: sum(1 for r in rows if r["state"] == k) for k in ("expected", "arrived", "in_room", "done", "no_show")}
+        return {"counts": counts, "rows": rows}
 
     # ---------- Identity check (see faces.py) ----------
 

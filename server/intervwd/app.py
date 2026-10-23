@@ -214,6 +214,35 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
     async def save_settings(request: Request, s: Doc) -> Doc:
         return svc.change_slug(s["orgId"], str((await body(request)).get("slug", "")))
 
+    @route("/api/settings/office", ["POST"], recruiter=True)
+    async def save_office(request: Request, s: Doc) -> Doc:
+        d = await body(request)
+        return svc.save_office(s["orgId"], str(d.get("address", "")), list(d.get("rooms") or []))
+
+    @route("/api/settings/kiosk", ["POST"], recruiter=True)
+    async def new_kiosk(_: Request, s: Doc) -> Doc:
+        return svc.new_kiosk(s["orgId"])
+
+    @route("/api/hiring-day", ["GET"], recruiter=True)
+    async def hiring_day(_: Request, s: Doc) -> Doc:
+        return svc.hiring_day(s["orgId"])
+
+    @route("/api/kiosk/{token}", ["GET"])
+    async def kiosk(request: Request) -> Doc:
+        return svc.kiosk(request.path_params["token"])
+
+    @route("/api/kiosk/{token}/checkin", ["POST"])
+    async def kiosk_checkin(request: Request) -> Doc:
+        return svc.kiosk_checkin(request.path_params["token"], str((await body(request)).get("name", "")))
+
+    @route("/api/kiosk/{token}/arrive", ["POST"])
+    async def kiosk_arrive(request: Request) -> Doc:
+        return svc.kiosk_arrive(request.path_params["token"], str((await body(request)).get("interviewId", "")))
+
+    @route("/api/kiosk/{token}/room/{room}", ["GET"])
+    async def kiosk_room(request: Request) -> Doc:
+        return svc.kiosk_room(request.path_params["token"], urllib.parse.unquote(request.path_params["room"]))
+
     @route("/api/jobs", ["POST"], recruiter=True)
     async def create_job(request: Request, s: Doc) -> Doc:
         d = await body(request)
