@@ -101,7 +101,15 @@ export const possessive = (name: string) => (name.endsWith('s') ? `${name}'` : `
 /** Why the camera didn't start, in words a candidate can act on. */
 export function cameraProblem(e: unknown): string {
   const name = (e as { name?: string })?.name;
-  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Camera access is blocked. Allow it in the address bar (the camera icon), then try again.';
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    // A saved "Deny" can't be overridden by the site, and the browser won't ask again: say where to change it.
+    const ua = navigator.userAgent;
+    const safari = /Safari/.test(ua) && !/Chrome|Chromium|Edg|CriOS|FxiOS/.test(ua);
+    const ios = /iPhone|iPad/.test(ua);
+    if (ios) return 'Camera access is blocked. Open the Settings app → Safari (or your browser) → Camera → Allow, then reload this page.';
+    if (safari) return `Camera access is blocked for this site. In the menu bar: Safari → Settings for ${location.hostname} → Camera → Allow, then reload.`;
+    return 'Camera access is blocked for this site. Click the camera or lock icon in the address bar, allow the camera, then reload.';
+  }
   if (name === 'NotReadableError' || name === 'AbortError') return 'Your camera is busy: another tab or app (Zoom, Teams, another Intervwd tab) is using it. Close that, then try again.';
   if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'No camera found on this device.';
   return 'The camera didn’t start. Try again, or use another browser.';
