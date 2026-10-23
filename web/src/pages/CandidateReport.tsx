@@ -78,7 +78,7 @@ function InterviewReport({ interview, round }: { interview: Interview; round?: R
             <div className="stack" style={{ gap: 8, marginTop: 12 }}>
               {interview.turns.map((t, i) => (
                 <div key={i} className={`bubble ${t.role === 'interviewer' ? 'ai' : 'me'}`} style={{ maxWidth: '100%', marginLeft: t.role === 'candidate' ? 40 : 0 }}>
-                  <div className="faint" style={{ marginBottom: 2 }}>{t.role === 'interviewer' ? (t.kind === 'follow_up' ? 'Interviewer · follow-up' : 'Interviewer') : 'Candidate'}</div>
+                  <div className="faint" style={{ marginBottom: 2 }}>{t.role === 'interviewer' ? (t.kind === 'follow_up' ? 'Interviewer · follow-up' : 'Interviewer') : t.kind === 'candidate_question' ? "Candidate's question (not scored)" : 'Candidate'}</div>
                   {t.text}
                 </div>
               ))}

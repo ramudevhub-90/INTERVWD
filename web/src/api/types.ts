@@ -75,7 +75,7 @@ export interface Candidate {
   createdAt: string;
 }
 
-export type TurnKind = 'greeting' | 'question' | 'follow_up' | 'answer' | 'closing';
+export type TurnKind = 'greeting' | 'question' | 'follow_up' | 'answer' | 'invite_questions' | 'candidate_question' | 'closing';
 
 export interface Turn {
   role: 'interviewer' | 'candidate';
@@ -207,3 +207,25 @@ export interface JoinInput {
   slotId: string;
   consent: boolean;
 }
+
+// ---------- Knowledge base ----------
+
+/** interviewer: shapes questions and scoring, never shown to candidates. shareable: answers candidates' questions. */
+export type KnowledgeKind = 'interviewer' | 'shareable';
+
+export interface KnowledgeDoc {
+  id: string;
+  jobId: string;
+  name: string;
+  kind: KnowledgeKind;
+  size: number;
+  status: 'pending' | 'syncing' | 'ready' | 'failed';
+  createdAt: string;
+}
+
+export interface KnowledgeView {
+  enabled: boolean;
+  documents: KnowledgeDoc[];
+}
+
+export type NewKnowledge = { kind: KnowledgeKind } & ({ file: File } | { name: string; text: string });

@@ -4,7 +4,7 @@
 
 import type { Api } from './index';
 import { ApiError } from './index';
-import type { DecisionAction, JoinInput, NewJob, NewRound, Session } from './types';
+import type { DecisionAction, JoinInput, KnowledgeDoc, KnowledgeView, NewJob, NewKnowledge, NewRound, Session } from './types';
 
 const TOKEN = 'intervwd-token';
 
@@ -113,6 +113,25 @@ export class HttpApi implements Api {
 
   removeSlot(roundId: string, slotId: string) {
     return call<import('./types').Round>('DELETE', `/rounds/${encodeURIComponent(roundId)}/slots/${encodeURIComponent(slotId)}`);
+  }
+
+  knowledge(jobId: string) {
+    return call<KnowledgeView>('GET', `/jobs/${encodeURIComponent(jobId)}/knowledge`);
+  }
+
+  addKnowledge(jobId: string, input: NewKnowledge) {
+    const form = new FormData();
+    form.set('kind', input.kind);
+    if ('file' in input) form.set('file', input.file, input.file.name);
+    else {
+      form.set('name', input.name);
+      form.set('text', input.text);
+    }
+    return call<KnowledgeDoc>('POST', `/jobs/${encodeURIComponent(jobId)}/knowledge`, form);
+  }
+
+  async removeKnowledge(jobId: string, docId: string) {
+    await call('DELETE', `/jobs/${encodeURIComponent(jobId)}/knowledge/${encodeURIComponent(docId)}`);
   }
 
   candidate(candidateId: string) {

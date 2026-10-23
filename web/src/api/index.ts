@@ -8,7 +8,10 @@ import type {
   InviteView,
   JobView,
   JoinInput,
+  KnowledgeDoc,
+  KnowledgeView,
   NewJob,
+  NewKnowledge,
   NewRound,
   Round,
   Session,
@@ -34,6 +37,9 @@ export interface Api {
   createRound(jobId: string, input: NewRound): Promise<Round>;
   addSlots(roundId: string, starts: string[]): Promise<Round>;
   removeSlot(roundId: string, slotId: string): Promise<Round>;
+  knowledge(jobId: string): Promise<KnowledgeView>;
+  addKnowledge(jobId: string, input: NewKnowledge): Promise<KnowledgeDoc>;
+  removeKnowledge(jobId: string, docId: string): Promise<void>;
   candidate(candidateId: string): Promise<CandidateView>;
   decide(candidateId: string, action: DecisionAction, note: string): Promise<void>;
   assistant(message: string): Promise<AssistantReply>;

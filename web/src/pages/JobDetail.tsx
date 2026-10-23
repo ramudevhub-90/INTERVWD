@@ -4,6 +4,7 @@ import { api } from '../api';
 import type { Round } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PageHead } from '../components/Shell';
+import { KnowledgeTab } from './KnowledgeTab';
 import { Loading, ScoreBadge, StatusBadge, copy, initials, inviteUrl, useLoad, when } from '../lib/util';
 
 function RoundCard({ round, onChange }: { round: Round; onChange: (r: Round) => void }) {
@@ -116,9 +117,12 @@ export function JobDetail() {
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'candidates'} className={tab === 'candidates' ? 'on' : ''} onClick={() => setParams({ tab: 'candidates' })}>Candidates ({candidates.length})</button>
         <button role="tab" aria-selected={tab === 'rounds'} className={tab === 'rounds' ? 'on' : ''} onClick={() => setParams({ tab: 'rounds' })}>Rounds and scheduling ({rounds.length})</button>
+        <button role="tab" aria-selected={tab === 'knowledge'} className={tab === 'knowledge' ? 'on' : ''} onClick={() => setParams({ tab: 'knowledge' })}>Knowledge base</button>
       </div>
 
-      {tab === 'candidates' ? (
+      {tab === 'knowledge' ? (
+        <KnowledgeTab jobId={job.id} />
+      ) : tab === 'candidates' ? (
         <div className="card">
           {candidates.length === 0 && (
             <div className="empty">

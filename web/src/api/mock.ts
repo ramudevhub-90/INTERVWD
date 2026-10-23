@@ -17,7 +17,10 @@ import type {
   Job,
   JobView,
   JoinInput,
+  KnowledgeDoc,
+  KnowledgeView,
   NewJob,
+  NewKnowledge,
   NewRound,
   Org,
   Report,
@@ -36,6 +39,7 @@ interface Db {
   candidates: Candidate[];
   interviews: Interview[];
   decisions: Decision[];
+  knowledge?: KnowledgeDoc[];
   session: Session | null;
   pending?: { action: DecisionAction; candidateId: string };
 }
@@ -310,6 +314,33 @@ export class MockApi implements Api {
     round.slots = round.slots.filter((s) => s.id !== slotId);
     this.save();
     return round;
+  }
+
+  async knowledge(jobId: string): Promise<KnowledgeView> {
+    await pause();
+    this.recruiter();
+    return { enabled: true, documents: (this.db.knowledge ?? []).filter((d) => d.jobId === jobId).map((d) => ({ ...d, status: 'ready' as const })) };
+  }
+
+  async addKnowledge(jobId: string, input: NewKnowledge) {
+    await pause(400);
+    this.recruiter();
+    const file = 'file' in input ? input.file : undefined;
+    if (!file && !('text' in input && input.text.trim())) throw new ApiError('Add some text or choose a file.');
+    const doc: KnowledgeDoc = {
+      id: id('kdoc'), jobId, kind: input.kind, status: 'syncing', createdAt: iso(new Date()),
+      name: file ? file.name : ('name' in input && input.name.trim()) || 'Notes', size: file ? file.size : 'text' in input ? input.text.length : 0,
+    };
+    this.db.knowledge = [...(this.db.knowledge ?? []), doc];
+    this.save();
+    return doc;
+  }
+
+  async removeKnowledge(_jobId: string, docId: string) {
+    await pause();
+    this.recruiter();
+    this.db.knowledge = (this.db.knowledge ?? []).filter((d) => d.id !== docId);
+    this.save();
   }
 
   async candidate(candidateId: string): Promise<CandidateView> {
