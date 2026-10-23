@@ -61,9 +61,17 @@ export function Dashboard() {
         </div>
       )}
 
-      {((data.pending?.length ?? 0) > 0 || (data.identityLocked?.length ?? 0) > 0) && (
+      {((data.pending?.length ?? 0) > 0 || (data.identityLocked?.length ?? 0) > 0 || (data.unfinished?.length ?? 0) > 0) && (
         <div className="card" style={{ marginBottom: 16, borderColor: 'var(--warning)' }}>
-          <div className="card-head"><h2>Needs you</h2><span className="faint">Approvals and identity checks</span></div>
+          <div className="card-head"><h2>Needs you</h2><span className="faint">Approvals, identity checks and unfinished interviews</span></div>
+          {data.unfinished?.map(({ candidate, job, interview }) => (
+            <Link key={interview.id} className="list-row" to={`/app/candidates/${candidate.id}`}>
+              <div className="avatar">{initials(candidate.name)}</div>
+              <div className="grow"><div style={{ fontWeight: 500 }}>{candidate.name}</div>
+                <div className="faint ellipsis">{job.title} · left after {interview.turns.filter((t) => t.role === 'candidate').length} answers{interview.turns.length ? ` · ${when(interview.turns[interview.turns.length - 1].at)}` : ''}</div></div>
+              <span className="badge">Stopped partway</span>
+            </Link>
+          ))}
           {data.pending?.map(({ candidate, job }) => (
             <Link key={candidate.id} className="list-row" to={`/app/candidates/${candidate.id}`}>
               <div className="avatar">{initials(candidate.name)}</div>
@@ -109,7 +117,7 @@ export function Dashboard() {
                   <div style={{ fontWeight: 500 }}>{candidate.name}</div>
                   <div className="faint ellipsis">{job.title} · {round.mode === 'human' ? 'with a person' : 'AI'}</div>
                 </div>
-                {interview.status === 'in_progress' && round.mode !== 'human'
+                {interview.status === 'in_progress' && interview.active !== false && round.mode !== 'human'
                   ? <Link className="btn btn-sm btn-primary" to={`/app/live/${interview.id}`}><Icon name="eye" size={14} /> Live now · watch</Link>
                   : <span className="small muted">{when(interview.slotStart)}</span>}
               </div>

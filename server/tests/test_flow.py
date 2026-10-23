@@ -782,3 +782,22 @@ def test_qr_scans_are_counted_in_reports(env):
     svc = client.app.state.svc
     assert svc.store.get("candidate", svc.store.get("interview", r.json()["interviewId"])["candidateId"])["source"] == "qr"
     assert client.get("/api/reports?days=7", headers=h).json()["sources"]["scannedQr"] == before + 1
+
+
+def test_quiet_interviews_are_not_live(env):
+    """A candidate who closes the tab halfway stops showing as 'Live now' and shows as stopped partway."""
+    client, _ = env
+    h = demo_login(client)
+    svc = client.app.state.svc
+    iv = "iv_demo_vikram"
+    client.post("/api/candidates/cand_vikram/identity/approve", headers=h)
+    client.post(f"/api/interviews/{iv}/start")
+    assert client.get("/api/dashboard", headers=h).json()["week"]["liveNow"] == 1
+    doc = svc.store.get("interview", iv)
+    for t in doc["turns"]:
+        t["at"] = "2020-01-01T00:00:00Z"
+    doc["startedAt"] = "2020-01-01T00:00:00Z"
+    svc.save_interview(doc)
+    d = client.get("/api/dashboard", headers=h).json()
+    assert d["week"]["liveNow"] == 0 and iv not in [r["interview"]["id"] for r in d["upcoming"]]
+    assert [r["interview"]["id"] for r in d["unfinished"]] == [iv]

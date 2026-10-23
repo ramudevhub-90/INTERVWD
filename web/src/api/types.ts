@@ -147,6 +147,8 @@ export interface Identity {
 
 export interface Interview {
   id: string;
+  /** In progress and not gone quiet (the server's view of 'live now'). */
+  active?: boolean;
   orgId: string;
   jobId: string;
   roundId: string;
@@ -186,6 +188,8 @@ export interface DashboardView {
   pending?: { candidate: Candidate; job: Job; round: Round }[];
   identityLocked?: { interview: Interview; candidate: Candidate; job: Job; round: Round }[];
   week?: WeekStats;
+  /** Started, then went quiet: the candidate left partway. */
+  unfinished?: { interview: Interview; candidate: Candidate; job: Job; round: Round }[];
 }
 
 export interface DayCount { date: string; count: number }

@@ -33,6 +33,7 @@ export function InterviewRoom() {
   const live = useLive(id, stage === 'live', teamVideo, stream);
   // Like a phone video call: the team member large, you small in the corner; tap the small one to swap.
   const [selfBig, setSelfBig] = useState(false);
+  const [showLog, setShowLog] = useState(false);
   const duo = live.teamOnCamera;
   const call = !!live.takenOverBy; // a person has taken over: full-screen video call
   const video = useRef<HTMLVideoElement>(null);
@@ -308,27 +309,95 @@ export function InterviewRoom() {
     );
   }
 
+  // The interview itself looks like a video call: the interviewer large (the AI, or the person who
+  // took over), you small in the corner (tap to swap), captions over the video. On a desktop the
+  // transcript sits alongside; on a phone it opens from a button.
+  if (stage === 'live') {
+    const interviewerSlot = selfBig ? 'cr-pip' : 'cr-main';
+    const selfSlot = selfBig ? 'cr-main' : 'cr-pip';
+    const status = call ? `You’re on a call with ${live.takenOverBy}. The AI interviewer is paused and carries on when they hand back.`
+      : mode === 'speaking' ? 'Interviewer is speaking' : mode === 'listening' ? (sending ? 'Sending your answer… keep talking to add more' : 'Listening… pause for a few seconds when you’re done')
+      : mode === 'thinking' ? 'Interviewer is thinking…' : 'Your turn';
+    const swap = () => setSelfBig(!selfBig);
+    return (
+      <div className="callroom">
+        <header className="cr-top">
+          <div className="cr-title"><b>{data.orgName}</b><span className="faint"> · {data.job.title} · {data.round.name.split(' · ')[0]}</span></div>
+          <div className="row" style={{ gap: 6 }}>
+            {live.watchers.length > 0 && !call && <span className="badge badge-warning"><Icon name="eye" size={13} /> {live.watchers.map((w) => w.split(' ')[0]).join(', ')} watching</span>}
+            {progress && <span className="badge badge-accent">Q {progress.question}/{progress.of}</span>}
+            <button className="btn btn-sm cr-only-sm" onClick={() => setShowLog(true)} aria-label="Show transcript"><Icon name="file" size={14} /> Transcript</button>
+          </div>
+        </header>
+        <div className="cr-body">
+          <div className="cr-left">
+            <div className="cr-stage">
+              {/* The interviewer: the person's video once they take over, otherwise the AI */}
+              <video ref={teamVideo} autoPlay playsInline muted className={duo ? interviewerSlot : 'hidden'} onClick={selfBig ? swap : undefined} />
+              {!duo && (
+                <div className={`cr-ai ${interviewerSlot}`} onClick={selfBig ? swap : undefined}>
+                  {call ? (
+                    <><div className="avatar cr-face">{initials(live.takenOverBy ?? '')}</div><span className="cr-name">{live.takenOverBy} is joining with video…</span></>
+                  ) : (
+                    <><div className={`cr-orb ${mode}`}><Icon name={mode === 'listening' ? 'mic' : mode === 'thinking' ? 'sparkle' : 'speaker'} size={34} /></div><span className="cr-name">AI interviewer</span></>
+                  )}
+                </div>
+              )}
+              {/* You */}
+              {stream ? <video ref={video} autoPlay muted playsInline className={`self ${selfSlot}`} onClick={selfBig ? undefined : swap} />
+                : <div className={`cr-ai ${selfSlot}`}><Icon name="camera" size={22} /><span className="cr-name">{mediaError ? 'Camera off' : 'Starting camera…'}</span></div>}
+              <span className="tag badge badge-warning cr-who">{call ? <><span className="cr-live" /> {live.takenOverBy} from {data.orgName}</> : selfBig ? 'You' : 'AI interviewer'}</span>
+              <div className="cr-caption">
+                {!call && <p className="cr-q">{current?.text ?? '…'}</p>}
+                {!call && !typing && mode === 'listening' && draft && <p className="cr-heard">“{draft}”</p>}
+                <p className="cr-status">{status}</p>
+              </div>
+            </div>
+            {!call && (
+              <div className="cr-controls">
+                {typing && (
+                  <textarea rows={3} value={draft} onChange={(e) => { setDraft(e.target.value); setErr(undefined); }} placeholder="Type your answer" className="cr-type" />
+                )}
+                <div className="row wrap" style={{ justifyContent: 'center', gap: 8 }}>
+                  <button className="btn btn-primary" onClick={submit} disabled={mode === 'speaking' || mode === 'thinking'}><Icon name="send" /> {typing ? 'Send answer' : 'Done'}</button>
+                  <button className="btn" onClick={repeat} disabled={mode === 'thinking'}><Icon name="repeat" /> Repeat</button>
+                  {canListen && (
+                    <button className="btn" onClick={toggleTyping} disabled={mode === 'speaking' || mode === 'thinking'}>
+                      <Icon name={typing ? 'mic' : 'keyboard'} /> {typing ? 'Speak instead' : 'Type instead'}
+                    </button>
+                  )}
+                </div>
+                {muted && <button className="btn btn-primary btn-block" onClick={repeat}><Icon name="speaker" /> Tap to hear the question</button>}
+                {err && <p className="error" style={{ margin: 0, textAlign: 'center' }}>{err}</p>}
+              </div>
+            )}
+          </div>
+          <aside className={`cr-side ${showLog ? 'open' : ''}`} aria-label="Transcript">
+            <div className="row between" style={{ marginBottom: 10 }}>
+              <h3>Transcript</h3>
+              <button className="btn btn-sm btn-ghost cr-only-sm" onClick={() => setShowLog(false)} aria-label="Close transcript"><Icon name="x" size={16} /></button>
+            </div>
+            <div className="transcript cr-log" ref={log}>
+              {turns.map((t, i) => (
+                <div key={i} className={`bubble ${t.role === 'interviewer' ? 'ai' : 'me'}`}>{t.text}</div>
+              ))}
+            </div>
+            <p className="faint small" style={{ marginTop: 10 }}><Icon name="shield" size={13} /> Recorded for {possessive(data.orgName)} recruiters. A person makes every decision.</p>
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <PublicTop right={<span className="faint row"><Icon name="shield" size={16} /> Recorded for {possessive(data.orgName)} recruiters</span>} />
       {header}
-      <div className={`room ${stage === 'live' ? 'is-live' : ''}`}>
+      <div className="room">
         <div className="stack room-side">
-          {/* When someone from the team takes over, this becomes a full-screen video call: them large,
-              you small in the corner (tap to swap). It goes back when they hand back to the AI. */}
-          <div className={`video ${duo ? 'duo' : ''} ${call ? 'fullcall' : ''}`}>
-            <video ref={teamVideo} autoPlay playsInline muted className={!duo ? 'hidden' : selfBig ? 'pip' : ''} onClick={() => selfBig && setSelfBig(false)} />
-            {call && !duo && (
-              <div className="fullcall-wait">
-                <div className="avatar" style={{ width: 88, height: 88, fontSize: 30 }}>{initials(live.takenOverBy ?? '')}</div>
-                <p>{live.takenOverBy} is joining with video…</p>
-              </div>
-            )}
-            {stream ? <video ref={video} autoPlay muted playsInline className={`self ${(duo || call) && !selfBig ? 'pip' : ''}`} onClick={() => (duo || call) && !selfBig && setSelfBig(true)} /> : <div className="stack" style={{ alignItems: 'center', gap: 8 }}><Icon name="camera" size={32} /><span className="small">{mediaError ?? 'Starting camera…'}</span></div>}
-            {call ? <span className="tag badge badge-warning"><span className="lp-dot" style={{ width: 7, height: 7 }} /> {live.takenOverBy} from {data.orgName}</span>
-              : duo ? <span className="tag badge badge-warning">{live.watchers[0] ?? 'The team'} · on the call</span>
-              : stream && <span className="tag badge badge-success"><Icon name="camera" size={13} /> Camera on</span>}
-            {call && <p className="fullcall-note">You’re on a call with {live.takenOverBy}. The AI interviewer is paused and carries on when they hand back.</p>}
+          <div className="video">
+            {stream ? <video ref={video} autoPlay muted playsInline className="self" /> : <div className="stack" style={{ alignItems: 'center', gap: 8 }}><Icon name="camera" size={32} /><span className="small">{mediaError ?? 'Starting camera…'}</span></div>}
+            {stream && <span className="tag badge badge-success"><Icon name="camera" size={13} /> Camera on</span>}
           </div>
           <div className="card card-flat" style={{ padding: '14px 16px' }}>
             <p className="small muted">A few snapshots are taken during the interview so the team can see who took it.{data.identity?.required ? ' They’re compared with your profile photo to confirm it’s you; a person reviews any mismatch.' : ''} Speak naturally; you can ask for a question to be repeated.</p>
@@ -380,47 +449,7 @@ export function InterviewRoom() {
                 </>
               )}
             </>
-          ) : (
-            <>
-              <div className="row" style={{ alignItems: 'flex-start' }}>
-                <div className={`orb ${mode === 'speaking' ? 'speaking' : mode === 'listening' ? 'listening' : ''}`}>
-                  <Icon name={mode === 'listening' ? 'mic' : mode === 'thinking' ? 'sparkle' : 'speaker'} size={24} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p className="faint" style={{ marginBottom: 4 }}>{live.takenOverBy ? `${live.takenOverBy} is talking with you on the call` : mode === 'speaking' ? 'Interviewer is speaking' : mode === 'listening' ? 'Listening to your answer' : mode === 'thinking' ? 'Interviewer is thinking…' : 'Your turn'}</p>
-                  <p className="question">{current?.text ?? '…'}</p>
-                </div>
-              </div>
-
-              <div className="field" style={{ marginBottom: 0 }}>
-                <span>{typing ? 'Your answer' : 'What we heard'}</span>
-                <textarea rows={4} value={draft} readOnly={!typing && mode === 'listening'} onChange={(e) => { setDraft(e.target.value); setErr(undefined); }} placeholder={typing ? 'Type your answer' : mode === 'listening' ? 'Start speaking…' : ''} />
-              </div>
-              <div className="row wrap">
-                <button className="btn btn-primary" onClick={submit} disabled={mode === 'speaking' || mode === 'thinking' || !!live.takenOverBy}><Icon name="send" /> {typing ? 'Send answer' : 'Done'}</button>
-                <button className="btn" onClick={repeat} disabled={mode === 'thinking'}><Icon name="repeat" /> Repeat</button>
-                {canListen && (
-                  <button className="btn btn-ghost" onClick={toggleTyping} disabled={mode === 'speaking' || mode === 'thinking'}>
-                    <Icon name={typing ? 'mic' : 'keyboard'} /> {typing ? 'Speak instead' : 'Type instead'}
-                  </button>
-                )}
-              </div>
-              {muted && (
-                <button className="btn btn-primary btn-block" onClick={repeat}><Icon name="speaker" /> Tap to hear the question</button>
-              )}
-              {mode === 'listening' && !typing && (
-                <p className="faint" style={{ marginTop: 0 }}>{sending ? 'Sending your answer… keep talking to add more.' : 'Answer naturally. When you pause for a few seconds, the interviewer carries on.'}</p>
-              )}
-              {err && <p className="error" style={{ marginTop: 0 }}>{err}</p>}
-
-              <div className="divider" />
-              <div className="transcript" ref={log}>
-                {turns.slice(0, -1).map((t, i) => (
-                  <div key={i} className={`bubble ${t.role === 'interviewer' ? 'ai' : 'me'}`}>{t.text}</div>
-                ))}
-              </div>
-            </>
-          )}
+          ) : null}
         </div>
       </div>
     </>

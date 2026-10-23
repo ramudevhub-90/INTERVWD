@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from . import engine, ical
@@ -34,6 +34,7 @@ from .store import Blobs, Store
 Doc = dict[str, Any]
 
 MAX_CV_BYTES = 5 * 1024 * 1024
+STALE_MIN = 15  # an interview with no activity for this long is "stopped partway", not live
 MAX_SNAPSHOTS = 8
 MAX_KNOWLEDGE_BYTES = 10 * 1024 * 1024
 MAX_KNOWLEDGE_DOCS = 25
@@ -249,7 +250,10 @@ class Service:
         for c in cands.values():
             cache[f"candidate#{c['id']}"] = c
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        upcoming = [r for iv in ivs if iv["status"] != "completed" and _parse(iv["slotStart"]) >= midnight and (r := self._row(iv, cache))][:6]
+        upcoming = [r for iv in ivs if iv["status"] != "completed" and _parse(iv["slotStart"]) >= midnight
+                    and (iv["status"] != "in_progress" or self._active(iv)) and (r := self._row(iv, cache))][:6]
+        # Started but gone quiet: the candidate left partway. The team decides what to do.
+        unfinished = [r for iv in ivs if iv["status"] == "in_progress" and not self._active(iv) and (r := self._row(iv, cache))][:6]
         awaiting = sorted(
             [r for iv in ivs if iv["status"] == "completed" and cands.get(iv["candidateId"], {}).get("status") == "completed" and (r := self._row(iv, cache))],
             key=lambda r: -(r["interview"].get("report") or {}).get("overall", 0),
@@ -271,6 +275,7 @@ class Service:
                 "pendingApproval": len(pending),
             },
             "week": self._week(org_id, ivs),
+            "unfinished": unfinished,
             "pending": pending,
             "identityLocked": locked,
             "jobs": job_rows,
@@ -283,7 +288,7 @@ class Service:
         from . import reports
 
         t = reports.build(self, org_id, 7)
-        return {"liveNow": sum(1 for iv in ivs if iv["status"] == "in_progress"), "completed": t["totals"]["completed"],
+        return {"liveNow": sum(1 for iv in ivs if self._active(iv)), "completed": t["totals"]["completed"],
                 "avgScore": t["totals"]["avgScore"], "fastTracked": t["triage"]["fastTrack"], "advanced": t["totals"]["advanced"],
                 "avgDecisionHours": t["totals"]["avgDecisionHours"], "aiAgreement": t["totals"]["aiAgreement"], "daily": t["daily"][-7:]}
 
@@ -391,9 +396,22 @@ class Service:
         self.save_round(round)
         return round
 
+    def _active(self, iv: Doc) -> bool:
+        """In progress and alive: something happened in the last few minutes, or a person is on the call.
+        A candidate who closed the tab halfway stops counting as live."""
+        if iv.get("status") != "in_progress":
+            return False
+        if self._live(iv["id"]).get("paused"):
+            return True
+        times = [t.get("at") for t in iv.get("turns", []) if t.get("at")] + [iv.get("startedAt")]
+        last = max((_parse(t) for t in times if t), default=None)
+        return bool(last and datetime.now(timezone.utc) - last < timedelta(minutes=STALE_MIN))
+
     def _public_interview(self, iv: Doc) -> Doc:
         """Snapshots are served through the API, never as raw S3 keys."""
         out = {k: v for k, v in iv.items() if k != "plan"}
+        if iv.get("status") == "in_progress":
+            out["active"] = self._active(iv)
         out["snapshots"] = [{"at": s["at"], "url": f"/api/interviews/{iv['id']}/snapshots/{i}", **({"match": s["match"], "similarity": s.get("similarity")} if s.get("match") else {})}
                             for i, s in enumerate(iv.get("snapshots", []))]
         if iv.get("identity"):

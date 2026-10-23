@@ -90,9 +90,9 @@ export function Invite() {
     );
   }
   const face = data.round.identityCheck && !data.invited?.hasPhoto; // returning candidates already have a photo
-  // The AI interviewer is always free, so online AI rounds can start straight away (the default when no times are open).
+  // The AI interviewer is always free, so online AI rounds can start straight away (the default).
   const canStartNow = (data.round.mode ?? 'ai') === 'ai' && data.round.location !== 'office';
-  const slotId = form.slotId || (canStartNow && !data.openSlots.length ? 'now' : '');
+  const slotId = form.slotId || (canStartNow ? 'now' : ''); // what the box shows is what gets booked
   const cvOptional = !!data.invited?.hasCv;
 
   const submit = async (e: FormEvent) => {
