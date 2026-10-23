@@ -105,6 +105,7 @@ def plan(nova: Nova, round: Doc, job: Doc, candidate: Doc, ctx: list[Doc] | None
         "keeping exactly the same intent and difficulty, so every candidate is assessed on the same thing. "
         "One or two short spoken sentences each. No preamble, no numbering. " + NEUTRAL,
         f"Job: {job['title']}. {job['description']}\nCandidate: {candidate.get('cvSummary', '')} Skills: {', '.join(candidate.get('skills', []))}\n"
+        f"Address the candidate as {candidate['name'].split()[0]} if you use a name; never use any other name.\n"
         f"Fill q1 to q{len(core)}, one reworded question per core question. Where the team's notes give real context "
         "(their systems, scenarios), you may ground a question in it, without revealing model answers.\nCore questions:\n"
         + "\n".join(f"q{i + 1}. {q}" for i, q in enumerate(core)) + context_block(ctx or [], "The team's notes for interviewers"),
@@ -212,7 +213,8 @@ def answer_candidate(nova: Nova, question: str, org_name: str, ctx: list[Doc]) -
 
 
 def answer(nova: Nova, interview: Doc, round: Doc, candidate: Doc, text: str, ctx: list[Doc] | None = None,
-           org_name: str = "the company") -> tuple[list[Doc], bool]:
+           org_name: str = "the company", team: list[Doc] | None = None) -> tuple[list[Doc], bool]:
+    """`team` holds questions the watching team asked for; the first is asked next (and removed)."""
     last = next((t for t in reversed(interview["turns"]) if t["role"] == "interviewer" and t["kind"] != "handover"), None)
     if not last or interview["status"] == "completed":
         return [], True
@@ -222,7 +224,7 @@ def answer(nova: Nova, interview: Doc, round: Doc, candidate: Doc, text: str, ct
     plan_ = interview.get("plan") or round["questions"]
     first = candidate["name"].split()[0]
     goodbye = f"Thank you, {first}. That's the end of the interview. The team will review it and get back to you by email."
-    team = interview.get("teamQuestions") or []
+    team = team if team is not None else []
     if team and not asking:
         # A question someone from the team typed while watching: asked next, in the AI's voice.
         asked = team.pop(0)

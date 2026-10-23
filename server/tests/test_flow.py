@@ -695,3 +695,20 @@ def test_every_mix_of_ai_and_person_rounds(env):
     iv = book_next(rounds[1], next_link())
     run_ai(iv)
     assert client.get(f"/api/candidates/{cid}", headers=h).json()["candidate"]["status"] == "completed"
+
+
+def test_watching_never_overwrites_answers(env):
+    """Heartbeats from someone watching used to rewrite the whole interview and could drop an answer."""
+    client, _ = env
+    h = demo_login(client)
+    svc = client.app.state.svc
+    iv = "iv_demo_vikram"
+    client.post("/api/candidates/cand_vikram/identity/approve", headers=h)
+    client.post(f"/api/interviews/{iv}/start")
+    seat = client.post(f"/api/interviews/{iv}/live").json()
+    for _ in range(3):
+        client.get(f"/api/interviews/{iv}/live/state", headers=h)
+        client.post(f"/api/interviews/{iv}/answer", json={"text": "An answer with enough detail to count as a real answer here."})
+    turns = svc.store.get("interview", iv)["turns"]
+    assert sum(1 for t in turns if t["kind"] == "answer") == 3
+    assert client.post(f"/api/interviews/{iv}/live/host", headers=h).json()["meeting"]["MeetingId"] == seat["meeting"]["MeetingId"]
