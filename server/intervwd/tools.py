@@ -193,3 +193,38 @@ def let_in(svc: Service, s: Doc, candidate_name: str, confirm: bool = False) -> 
         return {"say": f"To confirm: let {c['name']} start the interview without a matching identity check. Have you checked the photos? Shall I?", "needsConfirmation": True}
     svc.approve_identity(s["orgId"], c["id"], s["name"])
     return {"say": f"Done. {c['name']} can start the interview now.", "done": True}
+
+
+def briefing(svc: Service, s: Doc, tz_offset_min: int = 0) -> Doc:
+    """What changed since the recruiter last asked: finished interviews, approvals, identity problems, what's next.
+    Remembers when they last heard it, so "what's new?" only tells them news."""
+    from .engine import now
+
+    key = f"{s['orgId']}#{s['email']}"
+    seen = (svc.store.get("briefing", key) or {}).get("at", "")
+    names = {c["id"]: c for c in svc.all_candidates(s["orgId"])}
+    ivs = svc.interviews(s["orgId"])
+    finished = sorted([iv for iv in ivs if iv.get("report") and (iv.get("endedAt") or "") > seen], key=lambda iv: -iv["report"]["overall"])
+    d = svc.dashboard(s["orgId"], tz_offset_min)
+    pending = [p["candidate"]["name"] for p in d["pending"]]
+    locked = [r["candidate"]["name"] for r in d["identityLocked"]]
+    upcoming = [r for r in d["upcoming"] if r["interview"]["status"] == "scheduled"][:3]
+    parts = []
+    if finished:
+        top = finished[0]
+        who = names.get(top["candidateId"], {}).get("name", "A candidate")
+        parts.append(f"{len(finished)} interview{'s' if len(finished) > 1 else ''} finished {'since you last asked' if seen else 'recently'}. "
+                     f"{who} scored highest, {top['report']['overall']}.")
+    if pending:
+        parts.append(f"{', '.join(pending)} {'is' if len(pending) == 1 else 'are'} waiting for you to approve their profile.")
+    if locked:
+        parts.append(f"{', '.join(locked)} failed the identity check and can't start until you look at the photos.")
+    if upcoming:
+        nxt = upcoming[0]
+        parts.append(f"Next up: {nxt['candidate']['name']} for {nxt['job']['title']} at {_time(nxt['interview']['slotStart'], tz_offset_min)}.")
+    if not parts:
+        parts.append("Nothing new since you last asked. No interviews are waiting on you.")
+    elif finished:
+        parts.append(f"Want to hear {names.get(finished[0]['candidateId'], {}).get('name', 'their').split()[0]}'s report?")
+    svc.store.put("briefing", key, {"at": now()})
+    return {"say": " ".join(parts), "finished": len(finished), "pendingApproval": pending, "identityLocked": locked}

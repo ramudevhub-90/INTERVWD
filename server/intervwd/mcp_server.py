@@ -13,7 +13,7 @@ from .service import Problem, Service
 
 INSTRUCTIONS = """Intervwd runs structured AI voice interviews for a company's hiring rounds and scores each
 candidate against the round's rubric. You help the signed-in recruiter run their pipeline.
-- Use get_todays_interviews for "how did today go", list_awaiting_decision for who needs a decision,
+- Use get_briefing for "what's new" or "good morning"; get_todays_interviews for "how did today go", list_awaiting_decision for who needs a decision,
   get_candidate_report and compare_candidates for scores and evidence.
 - list_pending_approvals finds sign-ups to approve and interviews locked by a failed identity check.
 - advance_candidate, hold_candidate, reject_candidate, review_signup and let_candidate_in change things: call them with
@@ -80,6 +80,13 @@ def create_server(svc: Service) -> MCPServer:
         """Add interview time slots candidates can book. starts are ISO 8601 date-times with a time
         zone offset, e.g. 2026-10-26T10:00:00+05:30."""
         return call(tools.add_interview_slots, job_title, starts, round_number)
+
+    @mcp.tool(title="What's new with hiring", annotations=READ)
+    def get_briefing() -> dict[str, Any]:
+        """A spoken briefing of what changed since the recruiter last asked: interviews finished (best
+        first), profiles waiting for approval, identity checks that failed, and the next interview.
+        Use for "what's new", "good morning", "any updates"."""
+        return call(tools.briefing)
 
     @mcp.tool(title="Who needs approval", annotations=READ)
     def list_pending_approvals() -> dict[str, Any]:

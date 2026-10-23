@@ -308,3 +308,12 @@ def test_hr_adds_a_candidate_who_finishes_their_profile(env):
     done = book(client, "nw-storeops-r1", slot, t=token, name="Asha Pillai", email="asha@example.com")
     assert done.json()["status"] == "scheduled"  # HR-added candidates are pre-approved
     assert client.get(f"/api/invites/nw-storeops-r1?t={token}").status_code == 404  # the personal link is single use
+
+
+def test_briefing_only_tells_news(env):
+    client, _ = env
+    h = demo_login(client)
+    ask = lambda m: client.post("/api/assistant", headers=h, json={"message": m}).json()  # noqa: E731
+    first = ask("Alexa, what's new?")
+    assert "scored highest" in first["text"] and first["tool"] == "get_briefing"
+    assert "Nothing new" in ask("Any updates?")["text"] or "Next up" in ask("Any updates?")["text"]
