@@ -17,6 +17,7 @@ const SUGGESTIONS = [
   'How did Rahul do?',
   'Move Rahul to the next round',
   'What jobs are open?',
+  "How's the backend job going?",
   'Share the backend invite link',
 ];
 

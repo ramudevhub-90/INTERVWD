@@ -70,6 +70,12 @@ def create_server(svc: Service) -> MCPServer:
         candidates waiting for a decision."""
         return call(tools.compare_candidates, candidate_names)
 
+    @mcp.tool(title="How a job is going", annotations=READ)
+    def get_job_status(job_title: str) -> dict[str, Any]:
+        """One job at a glance: candidates per round and stage, who's interviewing now, who's waiting for a
+        decision (best first), the AI's fast-tracks, the average score and the next open slot."""
+        return call(tools.job_status, job_title)
+
     @mcp.tool(title="Get an invite link", annotations=READ)
     def get_invite_link(job_title: str | None = None, round_number: int | None = None) -> dict[str, Any]:
         """The link candidates use to sign up, upload a CV and book an interview slot for a job's round."""

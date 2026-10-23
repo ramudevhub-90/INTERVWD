@@ -37,6 +37,8 @@ SPECS: list[Doc] = [
      "inputSchema": {"json": {"type": "object", "properties": {"candidate_name": _name}, "required": ["candidate_name"]}}},
     {"name": "compare_candidates", "description": "Compare candidates' reports. Without names, compares the top two waiting for a decision.",
      "inputSchema": {"json": {"type": "object", "properties": {"candidate_names": {"type": "array", "items": {"type": "string"}}}}}},
+    {"name": "get_job_status", "description": "How one job is going: candidates per round and stage, who's interviewing, who's waiting for a decision, fast-tracks, average score, next open slot. Use for 'how is the <job> job going', 'status of <job>'.",
+     "inputSchema": {"json": {"type": "object", "properties": {"job_title": {"type": "string"}}, "required": ["job_title"]}}},
     {"name": "get_invite_link", "description": "The invite link candidates use to sign up and book a slot for a job's round.",
      "inputSchema": {"json": {"type": "object", "properties": {"job_title": {"type": "string"}, "round_number": {"type": "integer"}}}}},
     {"name": "add_interview_slots", "description": "Add interview time slots to a job's round. Times are ISO 8601 with time zone.",
@@ -68,6 +70,7 @@ def run_tool(svc: Service, session: Doc, name: str, args: Doc, tz_offset_min: in
         "list_awaiting_decision": lambda: tools.awaiting_decision(svc, session),
         "get_candidate_report": lambda: tools.get_candidate_report(svc, session, str(args.get("candidate_name", ""))),
         "compare_candidates": lambda: tools.compare_candidates(svc, session, args.get("candidate_names") or None),
+        "get_job_status": lambda: tools.job_status(svc, session, str(args.get("job_title", "")), tz_offset_min),
         "get_invite_link": lambda: tools.get_invite_link(svc, session, args.get("job_title"), args.get("round_number")),
         "add_interview_slots": lambda: tools.add_interview_slots(svc, session, str(args.get("job_title", "")), list(args.get("starts", [])), int(args.get("round_number") or 1)),
         "get_briefing": lambda: tools.briefing(svc, session, tz_offset_min),
@@ -187,6 +190,9 @@ class Assistant:
             doc["pending"] = {"tool": f"{action}_candidate", "name": named}
             out.pop("tool", None)
             return {**out, "pendingConfirmation": True}
+        job_named = next((j["title"] for j in self.svc.jobs(session["orgId"]) if j["title"].split()[0].lower() in text), None)
+        if job_named and not re.search(r"\b(invite|link)\b", text):
+            return run("get_job_status", job_title=job_named)
         if re.search(r"\bcompare\b", text):
             return run("compare_candidates")
         if named and re.search(r"\b(how did|report|score|tell me about|summary|how was)\b", text):

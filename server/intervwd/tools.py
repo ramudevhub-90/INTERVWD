@@ -106,6 +106,56 @@ def get_todays_interviews(svc: Service, s: Doc, tz_offset_min: int = 0) -> Doc:
     }
 
 
+
+def job_status(svc: Service, s: Doc, job_title: str, tz_offset_min: int = 0) -> Doc:
+    """One job, at a glance: candidates per round and stage, who's interviewing now, who's waiting for a
+    decision (best first), the AI's fast-tracks, the average score and the next open slot."""
+    from .service import _parse
+
+    tz_offset_min = tz_of(svc, s, tz_offset_min)
+    job = find_job(svc, s["orgId"], job_title)
+    rounds = svc.rounds(job["id"])
+    cands = svc.candidates(job["id"])
+    ivs = [iv for iv in svc.interviews(s["orgId"]) if iv["jobId"] == job["id"]]
+    now = datetime.now(timezone.utc)
+    names = {c["id"]: c["name"] for c in cands}
+    stage = {"invited": "invited", "pending_approval": "waiting for approval", "scheduled": "booked", "in_progress": "interviewing",
+             "completed": "waiting for you", "on_hold": "on hold", "advanced": "moved on", "rejected": "not progressing"}
+    per_round = []
+    for r in rounds:
+        here = [c for c in cands if c["roundId"] == r["id"]]
+        counts: dict[str, int] = {}
+        for c in here:
+            counts[stage.get(c["status"], c["status"])] = counts.get(stage.get(c["status"], c["status"]), 0) + 1
+        free = sorted(x["start"] for x in r.get("slots", []) if not x.get("candidateId") and _parse(x["start"]) > now)
+        per_round.append({"round": r["name"], "mode": r.get("mode", "ai"), "candidates": len(here), "stages": counts, "nextOpenSlot": free[0] if free else None})
+    live = [names.get(iv["candidateId"]) for iv in ivs if svc._active(iv)]
+    waiting = sorted(((names.get(c["id"]), (svc.latest_report(s["orgId"], c["id"]) or {}).get("overall")) for c in cands if c["status"] == "completed"),
+                     key=lambda x: -(x[1] or 0))
+    scores = [iv["report"]["overall"] for iv in ivs if (iv.get("report") or {}).get("overall") is not None]
+    fast = sum(1 for c in cands for d in svc.decisions(c["id"]) if d.get("automatic"))
+    parts = [f"{job['title']}: {len(cands)} candidate{'s' if len(cands) != 1 else ''}."]
+    for pr in per_round:
+        if pr["candidates"]:
+            parts.append(f"{pr['round'].split(' · ')[0]}: " + ", ".join(f"{n} {k}" for k, n in pr["stages"].items()) + ".")
+    if live:
+        parts.append("Interviewing now: " + ", ".join(str(x) for x in live) + ".")
+    if waiting:
+        top = waiting[0]
+        parts.append(f"{len(waiting)} waiting for your decision; the strongest is {top[0]}" + (f" at {top[1]}." if top[1] is not None else "."))
+    if scores:
+        parts.append(f"Average score {sum(scores) / len(scores):.1f}.")
+    if fast:
+        parts.append(f"The AI fast-tracked {fast}.")
+    nxt = next((pr for pr in per_round if pr["nextOpenSlot"]), None)
+    if nxt:
+        parts.append(f"Next open slot: {_time(nxt['nextOpenSlot'], tz_offset_min)}.")
+    elif rounds:
+        parts.append("No open slots; AI rounds can still start straight away from the invite link.")
+    return {"say": " ".join(parts), "job": job["title"], "rounds": per_round, "interviewingNow": live,
+            "waitingForDecision": [{"candidate": n, "score": sc} for n, sc in waiting], "averageScore": round(sum(scores) / len(scores), 2) if scores else None,
+            "fastTracked": fast}
+
 def awaiting_decision(svc: Service, s: Doc) -> Doc:
     rows = []
     for c in svc.all_candidates(s["orgId"]):

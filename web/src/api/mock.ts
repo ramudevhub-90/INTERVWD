@@ -611,6 +611,17 @@ export class MockApi implements Api {
       const verb = decisionWord === 'advance' ? `move ${named.name} to the next ${job.title} round` : decisionWord === 'reject' ? `mark ${named.name} as not progressing for ${job.title}` : `put ${named.name} on hold for ${job.title}`;
       return { text: `To confirm: ${verb}. Shall I?`, pendingConfirmation: true };
     }
+    const jobNamed = this.db.jobs.find((j) => j.orgId === s.orgId && text.includes(j.title.split(' ')[0].toLowerCase()));
+    if (jobNamed && !/\b(invite|link)\b/.test(text)) {
+      const jc = cands.filter((c) => c.jobId === jobNamed.id);
+      const stage: Record<string, string> = { scheduled: 'booked', in_progress: 'interviewing', completed: 'waiting for you', advanced: 'moved on', on_hold: 'on hold', rejected: 'not progressing', invited: 'invited', pending_approval: 'waiting for approval' };
+      const counts: Record<string, number> = {};
+      jc.forEach((c) => { const k = stage[c.status] ?? c.status; counts[k] = (counts[k] ?? 0) + 1; });
+      const waiting = jc.filter((c) => c.status === 'completed' && scoreOf(c) !== undefined).sort((a, b) => (scoreOf(b) ?? 0) - (scoreOf(a) ?? 0));
+      const parts = [`${jobNamed.title}: ${jc.length} candidates. Round 1: ${Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ')}.`,
+        waiting.length ? `${waiting.length} waiting for your decision; the strongest is ${waiting[0].name} at ${scoreOf(waiting[0])}.` : '', 'The AI fast-tracked 2.'];
+      return { tool: 'get_job_status', text: parts.filter(Boolean).join(' ') };
+    }
     if (/\bcompare\b/.test(text)) {
       const ranked = cands.filter((c) => scoreOf(c) !== undefined && c.status === 'completed').sort((a, b) => (scoreOf(b) ?? 0) - (scoreOf(a) ?? 0)).slice(0, 2);
       if (ranked.length < 2) return { text: 'There are fewer than two finished interviews waiting for a decision, so there is nothing to compare yet.', tool: 'compare_candidates' };

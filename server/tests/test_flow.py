@@ -823,3 +823,17 @@ def test_empty_snapshots_are_not_mismatches(env):
     svc = client.app.state.svc
     svc.add_snapshot(iv, b" ", "image/jpeg")  # the fake matcher sees no face in an empty frame
     assert svc.store.get("interview", iv)["snapshots"] == []
+
+
+def test_job_status_by_voice(env):
+    """'How is the Backend Engineer job going?' answers for that one job, through the assistant and MCP tools."""
+    client, _ = env
+    h = demo_login(client)
+    out = client.post("/api/assistant", headers=h, json={"message": "How is the backend engineer job going?"}).json()
+    assert out["tool"] == "get_job_status", out
+    assert "Backend Engineer" in out["text"] and "waiting for your decision" in out["text"] and "Rahul Mehta" in out["text"]
+    from intervwd import tools
+    svc = client.app.state.svc
+    s = {"orgId": "org_northwind", "email": "demo@intervwd.com"}
+    st = tools.job_status(svc, s, "Store Operations")
+    assert st["job"] == "Store Operations Manager" and st["rounds"][0]["candidates"] >= 1
