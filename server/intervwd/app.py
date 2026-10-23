@@ -18,6 +18,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
+from . import knowledge as knowledge_mod
 from . import nova as nova_mod
 from . import seed
 from . import store as store_mod
@@ -86,13 +87,13 @@ def base_url(scope: Any) -> str:
 
 
 def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | None = None, nova: nova_mod.Nova | None = None,
-               mailer: Mailer | None = None, demo_code: str | None = None) -> Starlette:
+               mailer: Mailer | None = None, demo_code: str | None = None, kb: knowledge_mod.Knowledge | None = None) -> Starlette:
     if store is None or blobs is None:
         env_store, env_blobs = store_mod.from_env()
         store, blobs = store or env_store, blobs or env_blobs
     nova = nova or nova_mod.from_env()
     mailer = mailer or Mailer()
-    svc = Service(store, blobs, nova, os.environ.get("APP_URL", "https://intervwd.com"), mailer)
+    svc = Service(store, blobs, nova, os.environ.get("APP_URL", "https://intervwd.com"), mailer, kb or knowledge_mod.from_env())
     auth = Auth(store, mailer, demo_code)
     assistant = Assistant(svc, nova)
     mcp = create_server(svc)
@@ -206,6 +207,27 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
     @route("/api/jobs/{job_id}/rounds", ["POST"], recruiter=True)
     async def create_round(request: Request, s: Doc) -> Doc:
         return svc.create_round(s["orgId"], request.path_params["job_id"], await body(request))
+
+    @route("/api/jobs/{job_id}/knowledge", ["GET"], recruiter=True)
+    async def knowledge(request: Request, s: Doc) -> Doc:
+        return {"enabled": svc.kb.enabled, "documents": svc.knowledge(s["orgId"], request.path_params["job_id"])}
+
+    @route("/api/jobs/{job_id}/knowledge", ["POST"], recruiter=True)
+    async def add_knowledge(request: Request, s: Doc) -> Doc:
+        async with request.form(max_files=1, max_fields=6, max_part_size=11 * 1024 * 1024) as form:
+            kind = str(form.get("kind", ""))
+            upload = form.get("file")
+            if upload is not None and hasattr(upload, "read"):
+                data, name, kind_of = await upload.read(), upload.filename or "document", upload.content_type or ""
+            else:
+                text = str(form.get("text", "")).strip()
+                data, name, kind_of = text.encode(), str(form.get("name", "")).strip() or "Notes", "text/plain"
+            return svc.add_knowledge(s["orgId"], request.path_params["job_id"], name, kind, data, kind_of)
+
+    @route("/api/jobs/{job_id}/knowledge/{doc_id}", ["DELETE"], recruiter=True)
+    async def remove_knowledge(request: Request, s: Doc) -> Doc:
+        svc.remove_knowledge(s["orgId"], request.path_params["job_id"], request.path_params["doc_id"])
+        return {"ok": True}
 
     @route("/api/rounds/{round_id}/slots", ["POST"], recruiter=True)
     async def add_slots(request: Request, s: Doc) -> Doc:

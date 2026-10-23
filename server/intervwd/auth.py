@@ -34,6 +34,8 @@ Doc = dict[str, Any]
 DEMO_EMAIL = "demo@intervwd.com"
 CODE_TTL = 10 * 60
 CODE_ATTEMPTS = 5
+DEMO_MAX_FAILS = 30
+DEMO_FAIL_WINDOW = 15 * 60
 SESSION_TTL = 30 * 24 * 3600
 ACCESS_TTL = 3600
 REFRESH_TTL = 60 * 24 * 3600
@@ -135,7 +137,13 @@ class Auth:
         recruiter = self.store.get("recruiter", email)
         ok = False
         if recruiter and email == DEMO_EMAIL and self.demo_code:
+            # The demo code is shared and fixed, so wrong guesses are capped for everyone at once.
+            fails = self.store.get("demo-fails", "window") or {"n": 0}
+            if fails["n"] >= DEMO_MAX_FAILS:
+                raise Problem("Too many wrong codes for the demo account. Try again in 15 minutes.", 429)
             ok = hmac.compare_digest(code, self.demo_code)
+            if not ok:
+                self.store.put("demo-fails", "window", {"n": fails["n"] + 1}, expires=int(time.time()) + DEMO_FAIL_WINDOW)
         elif recruiter:
             saved = self.store.get("code", email)
             if saved and saved["attempts"] < CODE_ATTEMPTS:

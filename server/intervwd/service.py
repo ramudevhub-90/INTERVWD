@@ -9,6 +9,7 @@ Layout in the store (see store.py):
   candidate/<id>  listed under      job#<jobId>#candidates
   interview/<id>  listed under      org#<orgId>#interviews      (sorted by slot time; the id is the candidate's secret link)
   decision/<id>   listed under      candidate#<id>#decisions
+  kdoc/<id>       listed under      job#<jobId>#knowledge       (the file itself lives in the knowledge base bucket)
   booking/<roundId>#<slotId>        guards a slot so two candidates can't book it at once
 """
 
@@ -21,6 +22,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import engine
+from .knowledge import KINDS, Knowledge, NoKnowledge
 from .nova import Nova
 from .store import Blobs, Store
 
@@ -28,6 +30,10 @@ Doc = dict[str, Any]
 
 MAX_CV_BYTES = 5 * 1024 * 1024
 MAX_SNAPSHOTS = 8
+MAX_KNOWLEDGE_BYTES = 10 * 1024 * 1024
+MAX_KNOWLEDGE_DOCS = 25
+KNOWLEDGE_TYPES = {"application/pdf": "pdf", "text/plain": "txt", "text/markdown": "md", "text/html": "html", "text/csv": "csv",
+                   "application/msword": "doc", "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx"}
 CV_TYPES = {"application/pdf", "text/plain", "text/markdown", "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
 
@@ -62,6 +68,7 @@ class Service:
     nova: Nova
     app_url: str = "https://intervwd.com"
     mailer: Any = None  # auth.Mailer; None skips candidate emails (tests)
+    kb: Knowledge = NoKnowledge()  # type: ignore[assignment]
 
     def _email(self, to: str, subject: str, text: str) -> None:
         if self.mailer:
@@ -271,6 +278,72 @@ class Service:
     def all_candidates(self, org_id: str) -> list[Doc]:
         return [c for j in self.jobs(org_id) for c in self.candidates(j["id"])]
 
+    # ---------- Knowledge base ----------
+
+    def knowledge(self, org_id: str, job_id: str) -> list[Doc]:
+        """The job's documents, with sync status brought up to date."""
+        self._owned("job", job_id, org_id, "job")
+        docs = self.store.listed(f"job#{job_id}#knowledge")
+        status_of = getattr(self.kb, "job_status", None)
+        pending = [d for d in docs if d["status"] == "pending"]
+        if pending:
+            started = self.kb.sync()
+            if started:
+                for d in pending:
+                    d.update(status="syncing", ingestionJobId=started)
+                    self._save_kdoc(d)
+        for d in docs:
+            if d["status"] == "syncing":
+                state = status_of(d["ingestionJobId"]) if status_of and d.get("ingestionJobId") not in (None, "local") else "COMPLETE"
+                if state in ("COMPLETE", "FAILED", "STOPPED"):
+                    d["status"] = "ready" if state == "COMPLETE" else "failed"
+                    self._save_kdoc(d)
+        return [{k: v for k, v in d.items() if k not in ("key", "ingestionJobId")} for d in docs]
+
+    def _save_kdoc(self, d: Doc) -> None:
+        self.store.put("kdoc", d["id"], d, index=(f"job#{d['jobId']}#knowledge", d["createdAt"]))
+
+    def add_knowledge(self, org_id: str, job_id: str, name: str, kind: str, data: bytes, content_type: str) -> Doc:
+        self._owned("job", job_id, org_id, "job")
+        if not self.kb.enabled:
+            raise Problem("The knowledge base isn't set up on this server yet.", 503)
+        if kind not in KINDS:
+            raise Problem("Choose whether the interviewer only, or candidates too, can use this.")
+        content_type = content_type.split(";")[0].strip()
+        ext = KNOWLEDGE_TYPES.get(content_type)
+        if not ext:
+            raise Problem("Upload a PDF, Word, text, Markdown, HTML or CSV file.")
+        if not data.strip():
+            raise Problem("That document is empty.")
+        if len(data) > MAX_KNOWLEDGE_BYTES:
+            raise Problem("Documents can be up to 10 MB.")
+        if len(self.store.listed(f"job#{job_id}#knowledge")) >= MAX_KNOWLEDGE_DOCS:
+            raise Problem(f"A job can have up to {MAX_KNOWLEDGE_DOCS} documents. Remove one first.", 409)
+        doc_id = new_id("kdoc")
+        clean = re.sub(r"[^A-Za-z0-9._-]", "_", name.strip())[-80:] or "document"
+        if not clean.lower().endswith(f".{ext}"):
+            clean = f"{clean}.{ext}"
+        key = f"{org_id}/{job_id}/{doc_id}/{clean}"
+        self.kb.put(key, data, content_type, {"orgId": org_id, "jobId": job_id, "kind": kind, "docId": doc_id, "name": clean})
+        d = {"id": doc_id, "orgId": org_id, "jobId": job_id, "name": name.strip()[:120] or clean, "kind": kind, "size": len(data),
+             "key": key, "status": "pending", "createdAt": engine.now()}
+        self._save_kdoc(d)
+        self.knowledge(org_id, job_id)  # starts the sync
+        return {k: v for k, v in (self.store.get("kdoc", doc_id) or d).items() if k not in ("key", "ingestionJobId")}
+
+    def remove_knowledge(self, org_id: str, job_id: str, doc_id: str) -> None:
+        d = self._get("kdoc", doc_id, "document")
+        if d["orgId"] != org_id or d["jobId"] != job_id:
+            raise Problem("That document doesn't exist.", 404)
+        self.kb.delete(d["key"])
+        self.store.delete("kdoc", doc_id)
+        self.kb.sync()  # removes its passages from the index
+
+    def search(self, iv: Doc, query: str, kinds: tuple[str, ...], k: int = 4) -> list[Doc]:
+        if not self.kb.enabled or not self.store.listed(f"job#{iv['jobId']}#knowledge"):
+            return []
+        return self.kb.search(iv["orgId"], iv["jobId"], query, kinds, k)
+
     # ---------- Candidate side ----------
 
     def _round_by_code(self, code: str) -> Doc:
@@ -347,7 +420,8 @@ class Service:
         iv, round, c, job, org = self._ctx(interview_id)
         if iv["status"] == "completed":
             raise Problem("This interview has already finished.", 409)
-        turns = engine.start(self.nova, iv, round, job, c, org["name"])
+        ctx = self.search(iv, f"{job['title']} {' '.join(round['questions'])}", ("interviewer",), 6)
+        turns = engine.start(self.nova, iv, round, job, c, org["name"], ctx)
         self.save_interview(iv)
         if c["status"] == "scheduled":
             c["status"] = "in_progress"
@@ -360,9 +434,15 @@ class Service:
         iv, round, c, job, _ = self._ctx(interview_id)
         if iv["status"] != "in_progress":
             raise Problem("Start the interview first." if iv["status"] == "scheduled" else "This interview has already finished.", 409)
-        turns, done = engine.answer(self.nova, iv, round, c, text)
+        last = next((t for t in reversed(iv["turns"]) if t["role"] == "interviewer"), {})
+        if last.get("kind") == "invite_questions":
+            ctx = self.search(iv, text, ("shareable",))
+        else:
+            ctx = self.search(iv, f"{last.get('text', '')} {text}", ("interviewer",), 3)
+        turns, done = engine.answer(self.nova, iv, round, c, text, ctx, org_name=self.org(iv["orgId"])["name"])
         if done:
-            iv["report"] = engine.score(self.nova, iv, round, job)
+            rubric_ctx = self.search(iv, " ".join(f"{x['name']} {x['description']}" for x in round["criteria"]) + " " + " ".join(round["questions"]), ("interviewer",), 6)
+            iv["report"] = engine.score(self.nova, iv, round, job, rubric_ctx)
             c["status"] = "completed"
             self.save_candidate(c)
         self.save_interview(iv)

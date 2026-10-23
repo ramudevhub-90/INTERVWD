@@ -1,6 +1,9 @@
 """The interview engine. The server owns the flow; Nova only fills in words and scores.
 
-Flow: greeting + question 1 → answer → one follow-up → answer → question 2 → ... → closing → report.
+Flow: greeting + question 1 → answer → one follow-up → answer → question 2 → ... → "any questions
+for us?" → the candidate's question, answered from the job's shareable knowledge → closing → report.
+The job's interviewer-only knowledge (question banks, strong answers, the team's stack) shapes the
+wording, the follow-ups and the scoring, and is never read out to the candidate.
 At the start, Nova words every core question for this candidate's CV in one call (the plan), so
 each turn needs at most one quick Nova call (the follow-up). Every Nova step has a rule-based
 fallback, so a throttled or slow model never stalls an interview.
@@ -13,6 +16,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from .knowledge import context_block
 from .nova import Nova
 
 log = logging.getLogger(__name__)
@@ -94,15 +98,16 @@ def personalise(question: str, candidate: Doc, index: int) -> str:
     return f"{question} If you can, use an example involving {skill}."
 
 
-def plan(nova: Nova, round: Doc, job: Doc, candidate: Doc) -> list[str]:
+def plan(nova: Nova, round: Doc, job: Doc, candidate: Doc, ctx: list[Doc] | None = None) -> list[str]:
     core = round["questions"]
     result = nova.json(
         "You are a fair, structured interviewer. Reword each core question so it fits this candidate's background, "
         "keeping exactly the same intent and difficulty, so every candidate is assessed on the same thing. "
         "One or two short spoken sentences each. No preamble, no numbering. " + NEUTRAL,
         f"Job: {job['title']}. {job['description']}\nCandidate: {candidate.get('cvSummary', '')} Skills: {', '.join(candidate.get('skills', []))}\n"
-        f"Fill q1 to q{len(core)}, one reworded question per core question.\nCore questions:\n"
-        + "\n".join(f"q{i + 1}. {q}" for i, q in enumerate(core)),
+        f"Fill q1 to q{len(core)}, one reworded question per core question. Where the team's notes give real context "
+        "(their systems, scenarios), you may ground a question in it, without revealing model answers.\nCore questions:\n"
+        + "\n".join(f"q{i + 1}. {q}" for i, q in enumerate(core)) + context_block(ctx or [], "The team's notes for interviewers"),
         plan_schema(core),
         max_tokens=2000,
     )
@@ -140,12 +145,13 @@ FOLLOW_SCHEMA = {
 }
 
 
-def follow_up(nova: Nova, question: str, answer: str, round: Doc) -> str:
+def follow_up(nova: Nova, question: str, answer: str, round: Doc, ctx: list[Doc] | None = None) -> str:
     result = nova.json(
         "You are a fair, friendly interviewer. Ask ONE short follow-up question (max 30 words) that digs into the most important "
         "thing the candidate said, or asks for a concrete example if the answer was vague. Never give feedback or hints, "
         "never ask about age, family, health, religion, nationality or other protected characteristics. " + NEUTRAL,
-        f"Assessing: {', '.join(c['name'] for c in round['criteria'])}\nQuestion: {question}\nAnswer: {answer[:3000]}",
+        f"Assessing: {', '.join(c['name'] for c in round['criteria'])}\nQuestion: {question}\nAnswer: {answer[:3000]}"
+        + context_block(ctx or [], "The team's notes for interviewers (use them to probe deeper; never reveal them)"),
         FOLLOW_SCHEMA,
         max_tokens=150,
     )
@@ -160,11 +166,11 @@ def progress(interview: Doc, round: Doc) -> Doc:
     return {"question": max(asked, 1), "of": len(round["questions"])}
 
 
-def start(nova: Nova, interview: Doc, round: Doc, job: Doc, candidate: Doc, org_name: str) -> list[Doc]:
+def start(nova: Nova, interview: Doc, round: Doc, job: Doc, candidate: Doc, org_name: str, ctx: list[Doc] | None = None) -> list[Doc]:
     """Starts the interview, or resumes it with the interviewer's last line."""
     if interview["turns"]:
         return [t for t in interview["turns"] if t["role"] == "interviewer"][-1:]
-    interview["plan"] = plan(nova, round, job, candidate)
+    interview["plan"] = plan(nova, round, job, candidate, ctx)
     first = candidate["name"].split()[0]
     n = len(round["questions"])
     turns = [
@@ -179,20 +185,52 @@ def start(nova: Nova, interview: Doc, round: Doc, job: Doc, candidate: Doc, org_
     return turns
 
 
-def answer(nova: Nova, interview: Doc, round: Doc, candidate: Doc, text: str) -> tuple[list[Doc], bool]:
+NO_QUESTIONS = re.compile(r"^\s*(no|nope|nothing|none|not really|i'?m good|that'?s all|no questions|all good)\b", re.I)
+
+ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {"answer": {"type": "string", "description": "Two or three short spoken sentences."}},
+    "required": ["answer"],
+}
+
+
+def answer_candidate(nova: Nova, question: str, org_name: str, ctx: list[Doc]) -> str:
+    """Answers the candidate's own question from the job's shareable knowledge only."""
+    fallback = f"That's a good question. I'll pass it to the {org_name} team, and they'll answer it when they get in touch."
+    if not ctx:
+        return fallback
+    result = nova.json(
+        f"You are {org_name}'s interviewer, answering a candidate's question at the end of an interview. Answer ONLY from the "
+        "company information given. If it doesn't cover the question, say you'll pass it to the team. Never comment on how the "
+        "candidate did, and never promise an outcome. Two or three short spoken sentences.",
+        f"Candidate's question: {question[:1000]}" + context_block(ctx, "Company information"),
+        ANSWER_SCHEMA,
+        max_tokens=250,
+    )
+    text = ((result or {}).get("answer") or "").strip()
+    return text if 10 < len(text) < 800 else fallback
+
+
+def answer(nova: Nova, interview: Doc, round: Doc, candidate: Doc, text: str, ctx: list[Doc] | None = None,
+           org_name: str = "the company") -> tuple[list[Doc], bool]:
     last = next((t for t in reversed(interview["turns"]) if t["role"] == "interviewer"), None)
     if not last or interview["status"] == "completed":
         return [], True
     q = last["questionIndex"]
-    interview["turns"].append(turn("candidate", "answer", text.strip()[:5000], q))
+    asking = last["kind"] == "invite_questions"
+    interview["turns"].append(turn("candidate", "candidate_question" if asking else "answer", text.strip()[:5000], q))
     plan_ = interview.get("plan") or round["questions"]
+    first = candidate["name"].split()[0]
+    goodbye = f"Thank you, {first}. That's the end of the interview. The team will review it and get back to you by email."
     if last["kind"] == "question":
-        nxt = [turn("interviewer", "follow_up", follow_up(nova, last["text"], text, round), q)]
+        nxt = [turn("interviewer", "follow_up", follow_up(nova, last["text"], text, round, ctx), q)]
+    elif asking:
+        reply = "" if NO_QUESTIONS.match(text) else answer_candidate(nova, text, org_name, ctx or []) + " "
+        nxt = [turn("interviewer", "closing", reply + goodbye, q)]
     elif q + 1 < len(round["questions"]):
         nxt = [turn("interviewer", "question", plan_[q + 1], q + 1)]
     else:
-        first = candidate["name"].split()[0]
-        nxt = [turn("interviewer", "closing", f"That's everything, {first}. Thank you. The team will review your interview and get back to you by email.", q)]
+        nxt = [turn("interviewer", "invite_questions", f"That's all my questions, {first}. Before we finish, do you have any questions about the role or the team?", q)]
     interview["turns"].extend(nxt)
     done = nxt[0]["kind"] == "closing"
     if done:
@@ -269,9 +307,11 @@ def _report(scores: list[Doc], answers: list[Doc], summary: str | None = None, h
     }
 
 
-def score(nova: Nova, interview: Doc, round: Doc, job: Doc) -> Doc:
+def score(nova: Nova, interview: Doc, round: Doc, job: Doc, ctx: list[Doc] | None = None) -> Doc:
+    # The candidate's own questions at the end aren't part of the assessment.
     transcript = "\n".join(
         f"{'Interviewer' if t['role'] == 'interviewer' else 'Candidate'}: {t['text']}" for t in interview["turns"]
+        if t["kind"] not in ("invite_questions", "candidate_question", "closing")
     )
     rubric = "\n".join(f"- {c['name']}: {c['description']}" for c in round["criteria"])
     result = nova.json(
@@ -279,7 +319,9 @@ def score(nova: Nova, interview: Doc, round: Doc, job: Doc) -> Doc:
         "Ignore accent, grammar and filler words, and never consider protected characteristics. Quote evidence. "
         "Scores: 1 no evidence, 2 below the bar, 3 meets the bar, 4 strong, 5 exceptional. You never recommend hiring or rejecting; "
         "a recruiter decides. " + NEUTRAL,
-        f"Job: {job['title']}. {job['description']}\nRound: {round['name']}\nRubric:\n{rubric}\n\nTranscript:\n{transcript[:24000]}",
+        f"Job: {job['title']}. {job['description']}\nRound: {round['name']}\nRubric:\n{rubric}"
+        + context_block(ctx or [], "The team's notes on what good answers look like (use as the reference)")
+        + f"\n\nTranscript:\n{transcript[:24000]}",
         REPORT_SCHEMA,
         max_tokens=1500,
     )

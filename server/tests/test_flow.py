@@ -12,6 +12,7 @@ from starlette.testclient import TestClient
 
 from intervwd.app import create_app
 from intervwd.auth import Mailer
+from intervwd.knowledge import LocalKnowledge
 from intervwd.nova import MockNova
 from intervwd.store import MemoryBlobs, MemoryStore
 
@@ -31,7 +32,7 @@ class Outbox(Mailer):
 @pytest.fixture()
 def env():
     outbox = Outbox()
-    app = create_app(MemoryStore(), MemoryBlobs(), MockNova(), outbox, demo_code="424242")
+    app = create_app(MemoryStore(), MemoryBlobs(), MockNova(), outbox, demo_code="424242", kb=LocalKnowledge())
     with TestClient(app) as client:
         yield client, outbox
 
@@ -95,7 +96,8 @@ def test_full_interview(env):
     answers = ["I start with the riskiest flows, payments and refunds, and automate them with pytest against a staging API every night.",
                "Refund amounts and idempotency keys get property-based tests too.",
                "A currency rounding bug in Docker builds only; I bisected the image and found the locale setting.",
-               "I added a test that runs in every container."]
+               "I added a test that runs in every container.",
+               "What does the QA team's on-call look like?"]
     done = False
     for a in answers:
         out = client.post(f"/api/interviews/{iv}/answer", json={"text": a}).json()
@@ -172,3 +174,47 @@ def test_demo_reset_removes_visitor_data(env):
     seed.reset_demo(svc)
     assert svc.store.get("job", job_id) is None
     assert {c["id"] for c in svc.all_candidates(seed.DEMO_ORG)} == seed.SEEDED_CANDIDATES
+
+
+def test_demo_code_guesses_are_capped(env):
+    client, _ = env
+    for _ in range(30):
+        assert client.post("/api/auth/verify", json={"email": DEMO, "code": "000000"}).status_code == 401
+    # Even the right code is refused until the window passes.
+    assert client.post("/api/auth/verify", json={"email": DEMO, "code": "424242"}).status_code == 429
+
+
+def test_knowledge_base_shapes_the_interview(env):
+    client, _ = env
+    h = demo_login(client)
+    kb = lambda: client.get("/api/jobs/job_backend/knowledge", headers=h).json()  # noqa: E731
+    assert kb() == {"enabled": True, "documents": []}
+    team = "Our checkout runs on DynamoDB and handles 50k orders an hour during sales.\n\nOn-call rotates weekly across six engineers, with a day off after each rotation."
+    up = client.post("/api/jobs/job_backend/knowledge", headers=h, data={"kind": "shareable", "text": team, "name": "Team"})
+    assert up.status_code == 200, up.text
+    secret = client.post("/api/jobs/job_backend/knowledge", headers=h, data={"kind": "interviewer"},
+                         files={"file": ("strong-answers.md", b"A strong retry answer names idempotency keys stored with the charge.", "text/markdown")})
+    assert secret.status_code == 200
+    docs = kb()["documents"]
+    assert {d["kind"] for d in docs} == {"shareable", "interviewer"} and all(d["status"] == "ready" for d in docs)
+    assert client.post("/api/jobs/job_backend/knowledge", headers=h, data={"kind": "other", "text": "x" * 40}).status_code == 400
+    # Another company can't see or delete them.
+    svc = client.app.state.svc
+    assert svc.kb.search("org_other", "job_backend", "on-call rotation", ("shareable",)) == []
+
+    # A candidate's question is answered from shareable knowledge only (rules: the fallback says it'll be passed on).
+    iv = "iv_demo_vikram"
+    client.post(f"/api/interviews/{iv}/start")
+    for _ in range(10):
+        out = client.post(f"/api/interviews/{iv}/answer", json={"text": "I would use idempotency keys and retries with backoff on every payment call."}).json()
+    assert out["turns"][0]["kind"] == "invite_questions"
+    found = svc.search(svc.store.get("interview", iv), "What does on-call look like?", ("shareable",))
+    assert "On-call rotates weekly" in found[0]["text"]
+    assert svc.search(svc.store.get("interview", iv), "strong retry answer idempotency", ("shareable",)) == []
+    done = client.post(f"/api/interviews/{iv}/answer", json={"text": "What does on-call look like?"}).json()
+    assert done["done"] and done["turns"][0]["kind"] == "closing"
+    report = svc.store.get("interview", iv)["report"]
+    assert "on-call" not in " ".join(c["evidence"] for c in report["criteria"]).lower()
+
+    client.delete(f"/api/jobs/job_backend/knowledge/{docs[0]['id']}", headers=h)
+    assert len(kb()["documents"]) == 1
