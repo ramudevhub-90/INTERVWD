@@ -4,7 +4,7 @@ import { api } from '../api';
 import type { InterviewStep, Turn, VerifyResult } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PublicTop } from '../components/Shell';
-import { cameraProblem, Loading, possessive, useLoad, when } from '../lib/util';
+import { cameraProblem, initials, Loading, possessive, useLoad, when } from '../lib/util';
 import { canListen, listen, speak, stopSpeaking, unlockAudio } from '../lib/speech';
 import { useLive } from '../lib/live';
 
@@ -34,6 +34,7 @@ export function InterviewRoom() {
   // Like a phone video call: the team member large, you small in the corner; tap the small one to swap.
   const [selfBig, setSelfBig] = useState(false);
   const duo = live.teamOnCamera;
+  const call = !!live.takenOverBy; // a person has taken over: full-screen video call
   const video = useRef<HTMLVideoElement>(null);
   const listener = useRef<{ stop(): void }>();
   const log = useRef<HTMLDivElement>(null);
@@ -313,12 +314,21 @@ export function InterviewRoom() {
       {header}
       <div className={`room ${stage === 'live' ? 'is-live' : ''}`}>
         <div className="stack room-side">
-          <div className={`video ${duo ? 'duo' : ''}`}>
-            <video ref={teamVideo} autoPlay playsInline className={!duo ? 'hidden' : selfBig ? 'pip' : ''} onClick={() => selfBig && setSelfBig(false)} />
-            {stream ? <video ref={video} autoPlay muted playsInline className={`self ${duo && !selfBig ? 'pip' : ''}`} onClick={() => duo && !selfBig && setSelfBig(true)} /> : <div className="stack" style={{ alignItems: 'center', gap: 8 }}><Icon name="camera" size={32} /><span className="small">{mediaError ?? 'Starting camera…'}</span></div>}
-            {duo ? <span className="tag badge badge-warning">{live.takenOverBy ?? live.watchers[0] ?? 'The team'} · on the call</span>
-              : live.takenOverBy ? <span className="tag badge badge-warning"><Icon name="mic" size={13} /> {live.takenOverBy} is on the call</span>
+          {/* When someone from the team takes over, this becomes a full-screen video call: them large,
+              you small in the corner (tap to swap). It goes back when they hand back to the AI. */}
+          <div className={`video ${duo ? 'duo' : ''} ${call ? 'fullcall' : ''}`}>
+            <video ref={teamVideo} autoPlay playsInline muted className={!duo ? 'hidden' : selfBig ? 'pip' : ''} onClick={() => selfBig && setSelfBig(false)} />
+            {call && !duo && (
+              <div className="fullcall-wait">
+                <div className="avatar" style={{ width: 88, height: 88, fontSize: 30 }}>{initials(live.takenOverBy ?? '')}</div>
+                <p>{live.takenOverBy} is joining with video…</p>
+              </div>
+            )}
+            {stream ? <video ref={video} autoPlay muted playsInline className={`self ${(duo || call) && !selfBig ? 'pip' : ''}`} onClick={() => (duo || call) && !selfBig && setSelfBig(true)} /> : <div className="stack" style={{ alignItems: 'center', gap: 8 }}><Icon name="camera" size={32} /><span className="small">{mediaError ?? 'Starting camera…'}</span></div>}
+            {call ? <span className="tag badge badge-warning"><span className="lp-dot" style={{ width: 7, height: 7 }} /> {live.takenOverBy} from {data.orgName}</span>
+              : duo ? <span className="tag badge badge-warning">{live.watchers[0] ?? 'The team'} · on the call</span>
               : stream && <span className="tag badge badge-success"><Icon name="camera" size={13} /> Camera on</span>}
+            {call && <p className="fullcall-note">You’re on a call with {live.takenOverBy}. The AI interviewer is paused and carries on when they hand back.</p>}
           </div>
           <div className="card card-flat" style={{ padding: '14px 16px' }}>
             <p className="small muted">A few snapshots are taken during the interview so the team can see who took it.{data.identity?.required ? ' They’re compared with your profile photo to confirm it’s you; a person reviews any mismatch.' : ''} Speak naturally; you can ask for a question to be repeated.</p>

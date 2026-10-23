@@ -331,3 +331,12 @@ a.list-row:hover { background: var(--surface-2); }
   .poster { width: 210mm; height: 297mm; border-radius: 0; box-shadow: none; aspect-ratio: auto; }
 }
 @media (max-width: 560px) { .poster { padding: 28px 22px; } .poster h1 { font-size: 34px; margin-top: 30px; } .poster-cta { font-size: 26px; } .poster-sub { font-size: 15px; } }
+
+/* Taken over by a person: the candidate's screen becomes a full-screen video call */
+.video.fullcall { position: fixed; inset: 0; z-index: 1000; border-radius: 0; aspect-ratio: auto; max-height: none; background: #05060c; }
+.video.fullcall video.pip { width: 28%; max-width: 180px; inset: auto 16px 96px auto; }
+.fullcall-wait { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; color: #c9cfe6; }
+.fullcall-note { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; margin: 0; padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75)); color: #e9ecf8; font-size: 14px; text-align: center; }
+.video.fullcall .tag { top: calc(14px + env(safe-area-inset-top)); left: 14px; }
+@media (max-width: 860px) { .room .video.fullcall { max-height: none; aspect-ratio: auto; } }
