@@ -142,6 +142,7 @@ def build(svc: Service, org_id: str, days: int = 30) -> Doc:
         "jobs": job_rows,
         "criteria": criteria,
         "identity": ident,
-        "sources": {"signedUp": sum(1 for c in people if not c.get("addedBy")), "addedByTeam": sum(1 for c in people if c.get("addedBy"))},
+        "sources": {"signedUp": sum(1 for c in people if not c.get("addedBy")), "addedByTeam": sum(1 for c in people if c.get("addedBy")),
+                    "scannedQr": sum(1 for c in people if c.get("source") == "qr")},
         "modes": {"ai": modes.get("ai", 0), "human": modes.get("human", 0), "office": modes.get("office", 0)},
     }

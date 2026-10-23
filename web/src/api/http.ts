@@ -260,6 +260,7 @@ export class HttpApi implements Api {
     form.set('slotId', input.slotId);
     form.set('consent', String(input.consent));
     form.set('faceConsent', String(input.faceConsent));
+    if (input.source) form.set('source', input.source);
     form.set('phone', input.phone);
     if (input.token) form.set('t', input.token);
     if (input.cv) form.set('cv', input.cv, input.cv.name);

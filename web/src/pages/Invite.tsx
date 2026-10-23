@@ -60,6 +60,7 @@ export function Invite() {
   const code = plain ?? (org && roundSlug ? `${org}~${roundSlug}` : '');
   const [params] = useSearchParams();
   const token = params.get('t') ?? undefined;
+  const source = params.get('src') === 'qr' ? 'qr' : undefined;
   const { data, error } = useLoad(() => api.invite(code, token), [code, token]);
   const [form, setForm] = useState({ name: '', email: '', phone: '', slotId: '', consent: false, faceConsent: false });
   const [cv, setCv] = useState<File>();
@@ -110,7 +111,7 @@ export function Invite() {
     if (Object.keys(next).length) return;
     setBusy(true);
     try {
-      const out = await api.join(code, { ...form, slotId, cv, photo, token });
+      const out = await api.join(code, { ...form, slotId, cv, photo, token, source });
       setBooked({ ...out, start: data.openSlots.find((s) => s.id === slotId)?.start ?? new Date().toISOString() });
     } catch (err) {
       setErrors({ form: (err as Error).message });

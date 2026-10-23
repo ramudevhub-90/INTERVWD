@@ -421,7 +421,7 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
             out = svc.join(
                 request.path_params["code"], str(form.get("name", "")), str(form.get("email", "")), str(form.get("slotId", "")),
                 yes("consent"), cv, cv_name or "cv", cv_type, photo, photo_type, yes("faceConsent"), str(form.get("phone", "")),
-                str(form.get("t", "")) or None,
+                str(form.get("t", "")) or None, str(form.get("source", "")),
             )
         return {"interviewId": out["interviewId"], "status": out["status"]}
 

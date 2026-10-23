@@ -211,7 +211,7 @@ export interface ReportsView {
   jobs: { id: string; title: string; candidates: number; interviewed: number; avgScore: number | null; advanced: number; awaiting: number }[];
   criteria: { name: string; avg: number | null; n: number }[];
   identity: { checked: number; matched: number; approvedByPerson: number; locked: number };
-  sources: { signedUp: number; addedByTeam: number };
+  sources: { signedUp: number; addedByTeam: number; scannedQr?: number };
   modes: { ai: number; human: number; office: number };
 }
 
@@ -313,6 +313,8 @@ export interface JoinInput {
   photo?: File; // face photo for the identity check
   faceConsent: boolean;
   phone: string;
+  /** How they found the link: 'qr' when they scanned a poster. */
+  source?: string;
   token?: string; // personal link of a candidate HR added
   slotId: string;
   consent: boolean;

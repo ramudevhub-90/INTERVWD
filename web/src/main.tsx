@@ -13,6 +13,7 @@ import { NewRound } from './pages/NewRound';
 import { CandidateReport } from './pages/CandidateReport';
 import { AlexaSimulator } from './pages/Alexa';
 import { Reports } from './pages/Reports';
+import { Poster } from './pages/Poster';
 import { Settings } from './pages/Settings';
 
 // The video call pages bring in the Chime SDK, so they load only when someone opens a call.
@@ -49,6 +50,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="jobs/new" element={<NewJob />} />
             <Route path="jobs/:jobId" element={<JobDetail />} />
             <Route path="jobs/:jobId/rounds/new" element={<NewRound />} />
+            <Route path="jobs/:jobId/rounds/:roundId/poster" element={<Poster />} />
             <Route path="candidates/:candidateId" element={<CandidateReport />} />
             <Route path="reports" element={<Reports />} />
             <Route path="alexa" element={<AlexaSimulator />} />

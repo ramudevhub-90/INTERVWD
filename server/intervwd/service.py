@@ -597,7 +597,8 @@ class Service:
         return {"candidate": c, "link": link}
 
     def join(self, code: str, name: str, email: str, slot_id: str, consent: bool, cv: bytes, cv_name: str, cv_type: str,
-             photo: bytes = b"", photo_type: str = "", face_consent: bool = False, phone: str = "", token: str | None = None) -> Doc:
+             photo: bytes = b"", photo_type: str = "", face_consent: bool = False, phone: str = "", token: str | None = None,
+             source: str = "") -> Doc:
         round = self._round_by_code(code)
         invited = self._invited(round, token)
         if len(name.strip()) < 2:
@@ -632,6 +633,8 @@ class Service:
         approved = bool(invited) or not round.get("requireApproval")
         c = invited or {"id": new_id("cand"), "orgId": round["orgId"], "jobId": round["jobId"], "roundId": round["id"], "createdAt": engine.now()}
         c.update(name=name.strip()[:120], email=email.strip().lower()[:200], phone=phone.strip()[:30], status="scheduled" if approved else "pending_approval")
+        if not invited:  # where self sign-ups came from: a scanned QR poster, or the shared link
+            c["source"] = "qr" if source == "qr" else "link"
         if cv:
             self._save_cv(c, job, cv, cv_name, cv_type)
         if photo:

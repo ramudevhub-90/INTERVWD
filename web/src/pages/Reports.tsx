@@ -106,7 +106,7 @@ function Body({ r }: { r: ReportsView }) {
   return (
     <div className="stack" style={{ gap: 16 }}>
       <div className="grid cols-4">
-        <Kpi icon="users" label="Candidates" value={t.candidates} hint={`${r.sources.signedUp} signed up · ${r.sources.addedByTeam} added by your team`} />
+        <Kpi icon="users" label="Candidates" value={t.candidates} hint={`${r.sources.signedUp} signed up (${r.sources.scannedQr ?? 0} by QR) · ${r.sources.addedByTeam} added by your team`} />
         <Kpi icon="mic" label="Interviews completed" value={t.completed} hint={`${pct(t.completionRate)} of booked interviews that are due`} />
         <Kpi icon="chart" label="Average score" value={num(t.avgScore)} hint="Out of 5, across every round" />
         <Kpi icon="clock" label="Time to decision" value={hours(t.avgDecisionHours)} hint="From interview end to your call" />

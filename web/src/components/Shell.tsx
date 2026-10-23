@@ -18,7 +18,7 @@ export function Shell() {
   };
 
   // On a call or watching a live interview, the page is the call: no sidebar, just a way back.
-  if (/^\/app\/(call|live)\//.test(location.pathname)) {
+  if (/^\/app\/(call|live)\//.test(location.pathname) || location.pathname.endsWith('/poster')) {
     return (
       <div className="focus">
         <header className="focus-top">

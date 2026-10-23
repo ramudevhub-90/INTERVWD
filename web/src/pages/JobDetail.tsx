@@ -6,12 +6,14 @@ import type { Round } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PageHead } from '../components/Shell';
 import { KnowledgeTab } from './KnowledgeTab';
+import { Qr, downloadQr, qrLink } from '../components/Qr';
 import { Loading, ScoreBadge, StatusBadge, copy, initials, invitePath, inviteUrl, useLoad, when } from '../lib/util';
 
 function RoundCard({ round, onChange }: { round: Round; onChange: (r: Round) => void }) {
   const [start, setStart] = useState('');
   const [error, setError] = useState<string>();
   const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const url = inviteUrl(round);
 
   const add = async () => {
@@ -81,7 +83,21 @@ function RoundCard({ round, onChange }: { round: Round; onChange: (r: Round) => 
                 Share on WhatsApp
               </a>
               <a className="btn btn-sm" href={`mailto:?subject=${encodeURIComponent('Interview invitation')}&body=${encodeURIComponent(`Create your profile and pick a time for your interview here: ${url}`)}`}>Share by email</a>
+              <button className="btn btn-sm" onClick={() => setShowQr(!showQr)} aria-expanded={showQr}><Icon name="photo" size={14} /> QR code</button>
             </div>
+            {showQr && (
+              <div className="qr-panel">
+                <Qr url={qrLink(url)} size={150} />
+                <div className="stack" style={{ gap: 8 }}>
+                  <p className="small" style={{ fontWeight: 500 }}>Scan to interview</p>
+                  <p className="faint small">For walk-in drives, job fairs and your office: candidates scan, sign up on their phone{round.mode !== 'human' && round.location !== 'office' ? ' and can start the AI interview straight away' : ''}. Scans show up in Reports.</p>
+                  <div className="row wrap">
+                    <button className="btn btn-sm" onClick={() => downloadQr(qrLink(url), `intervwd-${round.publicPath?.replace('/', '-') ?? round.id}-qr`)}><Icon name="upload" size={14} /> Download</button>
+                    <Link className="btn btn-sm btn-primary" to={`/app/jobs/${round.jobId}/rounds/${round.id}/poster`} target="_blank">Print poster</Link>
+                  </div>
+                </div>
+              </div>
+            )}
             <p className="faint" style={{ marginTop: 6 }}>
               Applicants create a profile{round.identityCheck ? ' with a face photo' : ''}, upload a CV and book a slot{round.requireApproval ? '; you approve profiles before they get the interview link' : ''}. <Link to={invitePath(round)} target="_blank">Preview as a candidate</Link>
             </p>
