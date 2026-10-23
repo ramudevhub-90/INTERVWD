@@ -171,7 +171,8 @@ def progress(interview: Doc, round: Doc) -> Doc:
 def start(nova: Nova, interview: Doc, round: Doc, job: Doc, candidate: Doc, org_name: str, ctx: list[Doc] | None = None) -> list[Doc]:
     """Starts the interview, or resumes it with the interviewer's last line."""
     if interview["turns"]:
-        return [t for t in interview["turns"] if t["role"] == "interviewer"][-1:]
+        asked = [t for t in interview["turns"] if t["role"] == "interviewer" and t["kind"] != "handover"]
+        return asked[-1:]
     interview["plan"] = plan(nova, round, job, candidate, ctx)
     first = candidate["name"].split()[0]
     n = len(round["questions"])

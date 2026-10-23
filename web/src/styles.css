@@ -231,3 +231,27 @@ a.list-row:hover { background: var(--surface-2); }
 .call-wait { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; color: #c9d1ee; }
 .call-status { position: absolute; left: 12px; top: 12px; }
 .hidden { display: none; }
+
+/* ---------- Live team member's camera on the candidate's screen ---------- */
+.team-tile { position: relative; border-radius: var(--radius-lg); overflow: hidden; background: #000; aspect-ratio: 16 / 9; }
+.team-tile video { width: 100%; height: 100%; object-fit: cover; }
+.team-tile .badge { position: absolute; left: 10px; top: 10px; }
+.echo-team { position: absolute; right: 8px; bottom: 8px; width: 42%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; border: 2px solid #ffd38a; z-index: 2; }
+
+/* ---------- Phones: question and controls first, camera small ---------- */
+@media (max-width: 860px) {
+  .room .room-main { order: 1; }
+  .room .room-side { order: 2; }
+  .room .video { aspect-ratio: 16 / 10; max-height: 30vh; }
+  .room .question { font-size: 17px; }
+  .room .card { padding: 16px; }
+  .topbar .faint { display: none; }
+  .echo-show { width: 100%; }
+  .echo-screen { border-width: 8px; border-radius: 16px; }
+  .echo-body { padding: 0 14px 14px; gap: 14px; }
+  .echo-cam { max-height: 34vh; }
+  .echo-line { font-size: 20px; }
+  .echo-base { display: none; }
+  .call-self { width: 34%; }
+  .page-head h1 { font-size: 22px; }
+}

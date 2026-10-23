@@ -12,8 +12,9 @@ export interface LiveState {
   resumed: number;
 }
 
-export function useLive(interviewId: string, active: boolean): LiveState {
+export function useLive(interviewId: string, active: boolean, teamVideo?: React.RefObject<HTMLVideoElement>): LiveState & { teamOnCamera: boolean } {
   const [state, setState] = useState<LiveState>({ watchers: [], takenOverBy: null, resumed: 0 });
+  const [teamOnCamera, setTeamOnCamera] = useState(false);
   const audio = useRef<HTMLAudioElement>();
   const previous = useRef<string | null>(null);
 
@@ -42,6 +43,15 @@ export function useLive(interviewId: string, active: boolean): LiveState {
         }
         await av.bindAudioElement(audio.current);
         audio.current.play().catch(() => undefined);
+        // The team member's camera (when they take over): shown on the candidate's screen.
+        av.addObserver({
+          videoTileDidUpdate: (tile) => {
+            if (tile.localTile || !tile.boundAttendeeId || tile.tileId == null || tile.isContent) return;
+            if (teamVideo?.current) av.bindVideoElement(tile.tileId, teamVideo.current);
+            setTeamOnCamera(true);
+          },
+          videoTileWasRemoved: () => setTeamOnCamera(false),
+        });
         av.start();
         if (cams[0]) av.startLocalVideoTile();
         stop = () => {
@@ -80,5 +90,5 @@ export function useLive(interviewId: string, active: boolean): LiveState {
     };
   }, [interviewId, active]);
 
-  return state;
+  return { ...state, teamOnCamera };
 }

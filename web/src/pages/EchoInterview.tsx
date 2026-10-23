@@ -43,7 +43,8 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
   const lastChange = useRef(0);
   const answerRef = useRef('');
   const typedDone = useRef<(text: string) => void>();
-  const live = useLive(id, phase === 'interview');
+  const teamVideo = useRef<HTMLVideoElement>(null);
+  const live = useLive(id, phase === 'interview', teamVideo);
   const takenRef = useRef<string | null>(null);
   takenRef.current = live.takenOverBy;
   const [typed, setTyped] = useState('');
@@ -263,7 +264,8 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
                 </button>
               )}
             </div>
-            <div className={`echo-cam ${phase === 'identity' ? 'big' : ''}`}>
+            <div className={`echo-cam ${phase === 'identity' ? 'big' : ''}`} style={{ position: 'relative' }}>
+              <video ref={teamVideo} autoPlay playsInline className={live.teamOnCamera ? 'echo-team' : 'hidden'} />
               {stream ? <video ref={video} autoPlay muted playsInline /> : <Icon name="camera" size={28} />}
               {countdown && <span className="echo-count">{countdown}</span>}
               {phase === 'identity' && <span className="echo-frame" />}

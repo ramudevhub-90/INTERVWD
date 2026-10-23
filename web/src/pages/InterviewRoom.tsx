@@ -26,7 +26,8 @@ export function InterviewRoom() {
   const [progress, setProgress] = useState<InterviewStep['progress']>();
   const [err, setErr] = useState<string>();
   const [check, setCheck] = useState<VerifyResult & { busy?: boolean }>();
-  const live = useLive(id, stage === 'live');
+  const teamVideo = useRef<HTMLVideoElement>(null);
+  const live = useLive(id, stage === 'live', teamVideo);
   const video = useRef<HTMLVideoElement>(null);
   const listener = useRef<{ stop(): void }>();
   const log = useRef<HTMLDivElement>(null);
@@ -274,7 +275,7 @@ export function InterviewRoom() {
       <PublicTop right={<span className="faint row"><Icon name="shield" size={16} /> Recorded for {possessive(data.orgName)} recruiters</span>} />
       {header}
       <div className="room">
-        <div className="stack">
+        <div className="stack room-side">
           <div className="video">
             {stream ? <video ref={video} autoPlay muted playsInline /> : <div className="stack" style={{ alignItems: 'center', gap: 8 }}><Icon name="camera" size={32} /><span className="small">{mediaError ?? 'Starting camera…'}</span></div>}
             {stream && <span className="tag badge badge-success"><Icon name="camera" size={13} /> Camera on</span>}
@@ -284,7 +285,11 @@ export function InterviewRoom() {
           </div>
         </div>
 
-        <div className="card stack" style={{ gap: 14 }}>
+        <div className="card stack room-main" style={{ gap: 14 }}>
+          <div className={`team-tile ${live.teamOnCamera ? '' : 'hidden'}`}>
+            <video ref={teamVideo} autoPlay playsInline />
+            <span className="badge badge-warning">{live.takenOverBy ?? live.watchers[0] ?? 'The team'} · on the call</span>
+          </div>
           {stage === 'setup' ? (
             <>
               <div className="row"><div className="orb"><Icon name="mic" size={24} /></div><div><h3>Before you start</h3><p className="faint">About {data.round.durationMin} minutes · {data.round.questions.length} questions with follow-ups</p></div></div>
