@@ -18,8 +18,9 @@ export interface CallSeat {
 }
 
 /** `listenOnly` joins with the microphone muted and the camera off (watching an AI interview). */
-export function VideoCall({ seat, otherName, onLeave, listenOnly, unmuteSignal }: {
-  seat: CallSeat; otherName: string; onLeave?: () => void; listenOnly?: boolean; unmuteSignal?: boolean;
+/** `onTalk`: called when a watcher turns their mic or camera on (the live view uses it to take over). */
+export function VideoCall({ seat, otherName, onLeave, listenOnly, unmuteSignal, onTalk }: {
+  seat: CallSeat; otherName: string; onLeave?: () => void; listenOnly?: boolean; unmuteSignal?: boolean; onTalk?: () => void;
 }) {
   const local = useRef<HTMLVideoElement>(null);
   const remote = useRef<HTMLVideoElement>(null);
@@ -130,7 +131,7 @@ export function VideoCall({ seat, otherName, onLeave, listenOnly, unmuteSignal }
     const av = session.current?.audioVideo;
     if (!av) return;
     if (muted && !(await startDevices())) return;
-    if (muted) av.realtimeUnmuteLocalAudio();
+    if (muted) { av.realtimeUnmuteLocalAudio(); onTalk?.(); }
     else av.realtimeMuteLocalAudio();
     setMuted(!muted);
   };
@@ -138,6 +139,7 @@ export function VideoCall({ seat, otherName, onLeave, listenOnly, unmuteSignal }
     const av = session.current?.audioVideo;
     if (!av) return;
     if (!cameraOn && !(await startDevices())) return;
+    if (!cameraOn) onTalk?.();
     if (cameraOn) av.stopLocalVideoTile();
     else av.startLocalVideoTile();
     setCameraOn(!cameraOn);

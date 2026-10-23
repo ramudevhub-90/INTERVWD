@@ -116,7 +116,8 @@ export function WatchLive() {
       </PageHead>
       <div className="split-wide">
         <div className="stack">
-          <VideoCall seat={seat.data} otherName={seat.data.candidateName} listenOnly unmuteSignal={taken} />
+          {/* Turning your mic or camera on while the AI leads takes over, so nobody talks over the AI */}
+          <VideoCall seat={seat.data} otherName={seat.data.candidateName} listenOnly unmuteSignal={taken} onTalk={() => { if (!taken && !done && !busy) act('take_over'); }} />
           {!done && view && (() => {
             const c = view.candidateCall;
             const label = !c ? 'not reported yet (their page may be an older version: ask them to reload)'
