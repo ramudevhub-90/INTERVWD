@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable
 
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
+from starlette.exceptions import HTTPException
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
@@ -117,6 +118,8 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
                         result = await fn(request)
                 except Problem as e:
                     return JSONResponse({"error": str(e)}, status_code=e.status)
+                except HTTPException as e:  # e.g. a malformed or oversized form upload
+                    return JSONResponse({"error": e.detail or "That request wasn't valid."}, status_code=e.status_code)
                 except Exception:
                     log.exception("Unhandled error on %s", request.url.path)
                     return JSONResponse({"error": "Something went wrong on our side. Try again."}, status_code=500)
