@@ -1,11 +1,18 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { PublicTop } from '../components/Shell';
 import { useAuth } from '../lib/util';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Already signed in on this device (sessions last 30 days): skip the code and go straight in. */
+function useSignedIn() {
+  const { session } = useAuth();
+  const [params] = useSearchParams();
+  return session?.role === 'recruiter' ? <Navigate to={params.get('next') ?? '/app'} replace /> : null;
+}
 
 /** Second step of both forms: enter the 6-digit code from the email. */
 function CodeStep({ email, hint, onBack }: { email: string; hint?: string; onBack: () => void }) {
@@ -51,6 +58,7 @@ export function SignIn() {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
+  const signedIn = useSignedIn();
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!EMAIL.test(email.trim())) return setError('Enter your work email, like name@company.com.');
@@ -64,6 +72,7 @@ export function SignIn() {
     }
   };
 
+  if (signedIn) return signedIn;
   return (
     <>
       <PublicTop />
@@ -103,6 +112,7 @@ export function SignUp() {
     setErrors({ ...errors, [k]: undefined, form: undefined });
   };
 
+  const signedIn = useSignedIn();
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const next: typeof errors = {};
@@ -121,6 +131,7 @@ export function SignUp() {
     }
   };
 
+  if (signedIn) return signedIn;
   return (
     <>
       <PublicTop right={<Link className="btn btn-ghost" to="/signin">Sign in</Link>} />
