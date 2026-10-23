@@ -41,6 +41,8 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
   const listener = useRef<{ stop(): void }>();
   const lastChange = useRef(0);
   const answerRef = useRef('');
+  const typedDone = useRef<(text: string) => void>();
+  const [typed, setTyped] = useState('');
   const live = useRef(true);
 
   useEffect(() => {
@@ -65,11 +67,19 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
   }, []);
 
   /** Listens until the speaker pauses, then resolves with what they said. */
+  /** Listens until the speaker pauses; a typed answer (for noisy rooms or anyone who can't speak) also counts. */
   const hear = useCallback(() => new Promise<string>((resolve) => {
     answerRef.current = '';
     setHeard('');
+    setTyped('');
     setState('listening');
     lastChange.current = Date.now();
+    typedDone.current = (text: string) => {
+      clearInterval(timer);
+      listener.current?.stop();
+      setState('thinking');
+      resolve(text);
+    };
     listener.current = listen((t) => {
       answerRef.current = t;
       setHeard(t);
@@ -187,6 +197,13 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
             <div className="echo-text">
               <p className="echo-line">{line}</p>
               {state === 'listening' && <p className="echo-heard">{heard || 'Listening…'}</p>}
+              {state === 'listening' && (
+                <form className="row" style={{ marginTop: 14, maxWidth: 520 }} onSubmit={(e) => { e.preventDefault(); if (typed.trim()) typedDone.current?.(typed.trim()); }}>
+                  <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Or type your answer" aria-label="Type your answer"
+                    style={{ background: '#161a2b', borderColor: '#2a3049', color: '#eef0f8' }} />
+                  <button className="btn" disabled={!typed.trim()}>Send</button>
+                </form>
+              )}
               {sub && <p className="echo-sub">{sub}</p>}
               {phase === 'wake' && !room && (
                 <button className="btn btn-primary" style={{ marginTop: 18 }} onClick={run} disabled={!stream}>
