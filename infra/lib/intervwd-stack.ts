@@ -172,23 +172,15 @@ export class IntervwdStack extends cdk.Stack {
         })
       : undefined;
 
-    // Lambda function URLs rename WWW-Authenticate to x-amzn-remapped-www-authenticate, which hides the
-    // OAuth discovery hint MCP clients (Alexa+) need on a 401. Put the real header back for viewers.
-    const restoreAuthHeader = new cloudfront.Function(this, 'RestoreWwwAuthenticate', {
-      runtime: cloudfront.FunctionRuntime.JS_2_0,
-      code: cloudfront.FunctionCode.fromInline(
-        "function handler(event) { var h = event.response.headers; var r = h['x-amzn-remapped-www-authenticate']; " +
-          "if (r) { h['www-authenticate'] = { value: r.value }; delete h['x-amzn-remapped-www-authenticate']; } return event.response; }",
-      ),
-    });
-
+    // Note: Lambda function URLs rename WWW-Authenticate to x-amzn-remapped-www-authenticate, and
+    // CloudFront Functions don't run on 4xx responses, so the MCP 401 lacks the header. MCP clients fall
+    // back to /.well-known/oauth-protected-resource (MCP 2025-11-25), which the server serves.
     const api: cloudfront.BehaviorOptions = {
       origin: new origins.FunctionUrlOrigin(url, { customHeaders: { 'x-origin-secret': props.originSecret }, readTimeout: cdk.Duration.seconds(60) }),
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
       cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
       originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
-      functionAssociations: [{ function: restoreAuthHeader, eventType: cloudfront.FunctionEventType.VIEWER_RESPONSE }],
     };
 
     // Single-page app: any path without a file extension serves index.html (React Router takes over).
