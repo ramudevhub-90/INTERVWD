@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../api';
-import type { InterviewStep, Turn } from '../api/types';
+import type { InterviewStep, Turn, VerifyResult } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PublicTop } from '../components/Shell';
 import { Loading, useLoad } from '../lib/util';
@@ -24,6 +24,7 @@ export function InterviewRoom() {
   const [typing, setTyping] = useState(!canListen);
   const [progress, setProgress] = useState<InterviewStep['progress']>();
   const [err, setErr] = useState<string>();
+  const [check, setCheck] = useState<VerifyResult & { busy?: boolean }>();
   const video = useRef<HTMLVideoElement>(null);
   const listener = useRef<{ stop(): void }>();
   const log = useRef<HTMLDivElement>(null);
@@ -79,6 +80,29 @@ export function InterviewRoom() {
       clearInterval(every);
     };
   }, [stage, snapshot]);
+
+  /** A full-size, unmirrored camera frame for the identity check. */
+  const frame = () =>
+    new Promise<Blob | null>((resolve) => {
+      const v = video.current;
+      if (!v || !v.videoWidth) return resolve(null);
+      const c = document.createElement('canvas');
+      c.width = v.videoWidth;
+      c.height = v.videoHeight;
+      c.getContext('2d')!.drawImage(v, 0, 0);
+      c.toBlob(resolve, 'image/jpeg', 0.9);
+    });
+
+  const verify = async () => {
+    setCheck({ status: 'pending', busy: true });
+    const image = await frame();
+    if (!image) return setCheck({ status: 'pending', message: 'The camera isn’t ready yet. Try again in a moment.' });
+    try {
+      setCheck(await api.verifyIdentity(id, image));
+    } catch (e) {
+      setCheck({ status: 'pending', message: (e as Error).message });
+    }
+  };
 
   const startListening = useCallback(() => {
     setDraft('');
@@ -167,6 +191,9 @@ export function InterviewRoom() {
   }
 
   const current = [...turns].reverse().find((t) => t.role === 'interviewer');
+  const identityNeeded = !!data.identity?.required;
+  const identityStatus = check?.status && check.status !== 'not_required' ? check.status : data.identity?.status ?? 'pending';
+  const identityOk = identityStatus === 'matched' || identityStatus === 'approved';
   const header = (
     <div className="row between wrap" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 14px' }}>
       <div>
@@ -218,8 +245,30 @@ export function InterviewRoom() {
                 <li>Take your time. Use <b>Repeat</b> if you missed something.</li>
                 {!canListen && <li>Your browser can't caption speech, so you'll type answers. Chrome or Edge lets you speak.</li>}
               </ul>
-              <button className="btn btn-primary btn-lg" onClick={begin} disabled={!stream}>{stream ? 'Start interview' : 'Waiting for camera and microphone'}</button>
-              {mediaError && (
+              {data.candidateStatus === 'pending_approval' ? (
+                <p className="notice">{data.orgName} hasn't approved your profile yet. We'll email you when they do, and you can start then.</p>
+              ) : identityNeeded && !identityOk ? (
+                <div className="card card-flat" style={{ padding: '14px 16px' }}>
+                  <h3 className="row" style={{ gap: 8 }}><Icon name="shield" /> Identity check</h3>
+                  {identityStatus === 'locked' ? (
+                    <p className="small muted" style={{ marginTop: 6 }}>{check?.message ?? 'The identity check didn’t match. The team has been told and can let you in, so you don’t need to do anything else. Reload this page once they tell you.'}</p>
+                  ) : (
+                    <>
+                      <p className="small muted" style={{ margin: '6px 0 10px' }}>Look straight at the camera in good light. We compare it with the photo in your profile. A person reviews it if it doesn’t match.</p>
+                      <button className="btn btn-primary" onClick={verify} disabled={!stream || check?.busy}>{check?.busy ? 'Checking…' : 'Check it’s me'}</button>
+                      {check?.message && check.status !== 'matched' && <p className="error">{check.message}{check.attemptsLeft !== undefined ? ` ${check.attemptsLeft} ${check.attemptsLeft === 1 ? 'try' : 'tries'} left.` : ''}</p>}
+                      {check?.result === 'no_match' || check?.result === 'no_face' ? <p className="faint" style={{ marginTop: 6 }}>Tips: face the light, remove sunglasses or a cap, and keep your whole face in the frame.</p> : null}
+                    </>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {identityNeeded && <p className="small row" style={{ color: 'var(--success)' }}><Icon name="check" size={16} /> {identityStatus === 'approved' ? 'The team let you in.' : 'Identity confirmed.'}</p>}
+                  <button className="btn btn-primary btn-lg" onClick={begin} disabled={!stream}>{stream ? 'Start interview' : 'Waiting for camera and microphone'}</button>
+                </>
+              )}
+              {mediaError && identityNeeded && <p className="error" style={{ marginTop: 0 }}>{mediaError} The identity check needs your camera.</p>}
+              {mediaError && !identityNeeded && data.candidateStatus !== 'pending_approval' && (
                 <>
                   <p className="error" style={{ marginTop: 0 }}>{mediaError}</p>
                   <button className="btn" onClick={() => { setTyping(true); begin(); }}>Continue without camera, typing answers</button>

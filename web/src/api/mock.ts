@@ -17,9 +17,11 @@ import type {
   Job,
   JobView,
   JoinInput,
+  JoinResult,
   KnowledgeDoc,
   KnowledgeView,
   NewJob,
+  NewCandidate,
   NewKnowledge,
   NewRound,
   Org,
@@ -28,6 +30,7 @@ import type {
   Session,
   Slot,
   Turn,
+  VerifyResult,
 } from './types';
 import * as engine from '../lib/engine';
 
@@ -44,7 +47,7 @@ interface Db {
   pending?: { action: DecisionAction; candidateId: string };
 }
 
-const KEY = 'intervwd-sample-v1';
+const KEY = 'intervwd-sample-v2';
 export const DEMO_CODE = '246810';
 const id = (p: string) => `${p}_${Math.random().toString(36).slice(2, 10)}`;
 const iso = (d: Date) => d.toISOString();
@@ -69,6 +72,7 @@ function seed(): Db {
   ];
   const r = (jobId: string, index: number, name: string, criteria: Round['criteria'], questions: string[], code: string, slots: Slot[]): Round => ({
     id: `round_${jobId.slice(4)}_${index}`, jobId, orgId: org.id, index, name, durationMin: 20, criteria, questions, inviteCode: code, slots,
+    identityCheck: code === 'nw-backend-r1' || code === 'nw-storeops-r1', requireApproval: code === 'nw-storeops-r1',
   });
   const rounds: Round[] = [
     r('job_backend', 1, 'Round 1 · Technical screen',
@@ -290,6 +294,7 @@ export class MockApi implements Api {
     const round: Round = {
       id: id('round'), jobId, orgId: orgId!, index, name: `Round ${index} · ${input.name.trim()}`, durationMin: input.durationMin,
       criteria: input.criteria.map((c) => ({ id: id('c'), ...c })), questions: input.questions, inviteCode: `${slug}-r${index}-${Math.random().toString(36).slice(2, 6)}`, slots: [],
+      identityCheck: input.identityCheck, requireApproval: input.requireApproval,
     };
     this.db.rounds.push(round);
     this.save();
@@ -367,6 +372,43 @@ export class MockApi implements Api {
     this.db.decisions.push({ id: id('d'), candidateId, roundId: c.roundId, action, note, by, at: iso(new Date()) });
     c.status = action === 'advance' ? 'advanced' : action === 'hold' ? 'on_hold' : 'rejected';
     this.save();
+  }
+
+  async addCandidate(jobId: string, input: NewCandidate) {
+    await pause();
+    this.recruiter();
+    const round = this.find(this.db.rounds, input.roundId, 'round');
+    const c: Candidate = {
+      id: id('cand'), orgId: round.orgId, jobId, roundId: round.id, name: input.name.trim(), email: input.email.trim().toLowerCase(),
+      cvName: input.cv?.name ?? '', cvSummary: 'Profile not completed yet.', skills: [], status: 'invited', createdAt: iso(new Date()),
+    };
+    this.db.candidates.push(c);
+    this.save();
+    return { id: c.id, link: `${location.origin}/i/${round.inviteCode}?t=sample-${c.id}` };
+  }
+
+  async reviewSignup(candidateId: string, approve: boolean) {
+    await pause();
+    this.recruiter();
+    const c = this.find(this.db.candidates, candidateId, 'candidate');
+    c.status = approve ? 'scheduled' : 'declined';
+    this.save();
+  }
+
+  async approveIdentity(candidateId: string) {
+    await pause();
+    this.recruiter();
+    const iv = this.db.interviews.filter((i) => i.candidateId === candidateId).pop();
+    if (iv) iv.identity = { status: 'approved', approvedBy: this.db.session?.name };
+    this.save();
+  }
+
+  async verifyIdentity(interviewId: string): Promise<VerifyResult> {
+    await pause(600);
+    const iv = this.find(this.db.interviews, interviewId, 'interview');
+    iv.identity = { status: 'matched', similarity: 98.7, attempts: 1 };
+    this.save();
+    return { status: 'matched', result: 'matched', similarity: 98.7, attemptsLeft: 2, message: "Thanks, that's you. (Sample mode always matches.)" };
   }
 
   // ---------- Assistant (what Alexa+ does through the MCP tools) ----------
@@ -451,17 +493,18 @@ export class MockApi implements Api {
     const org = this.find(this.db.orgs, round.orgId, 'company');
     return {
       orgName: org.name, job: this.find(this.db.jobs, round.jobId, 'job'),
-      round: { id: round.id, name: round.name, index: round.index, durationMin: round.durationMin },
+      round: { id: round.id, name: round.name, index: round.index, durationMin: round.durationMin, identityCheck: !!round.identityCheck, requireApproval: !!round.requireApproval },
       openSlots: round.slots.filter((s) => !s.candidateId && new Date(s.start) > new Date(Date.now() - 3600_000)),
     };
   }
 
-  async join(code: string, input: JoinInput) {
+  async join(code: string, input: JoinInput): Promise<JoinResult> {
     await pause(500);
     const round = this.byCode(code);
     if (!input.consent) throw new ApiError('Agree to the recording terms to book.', 400);
     const slot = round.slots.find((s) => s.id === input.slotId);
     if (!slot || slot.candidateId) throw new ApiError('That slot was just taken. Pick another.', 409);
+    if (!input.cv) throw new ApiError('Upload your CV as a PDF or text file.', 400);
     const cvText = (await input.cv.text().catch(() => '')).slice(0, 20000);
     const known = ['Python', 'FastAPI', 'Django', 'Flask', 'AWS', 'Lambda', 'PostgreSQL', 'MySQL', 'Redis', 'Kafka', 'Go', 'Java', 'React', 'Node.js', 'SQL', 'Docker', 'Kubernetes', 'DynamoDB', 'Excel', 'Tableau', 'Retail', 'Inventory'];
     const skills = known.filter((k) => new RegExp(`\\b${k.replace('.', '\\.')}\\b`, 'i').test(cvText)).slice(0, 5);
@@ -474,7 +517,7 @@ export class MockApi implements Api {
     this.db.candidates.push(c);
     this.db.interviews.push(iv);
     this.save();
-    return { interviewId: iv.id };
+    return { interviewId: iv.id, status: c.status };
   }
 
   private ctx(interviewId: string) {
@@ -489,7 +532,12 @@ export class MockApi implements Api {
     await pause();
     const { interview, round, candidate, org } = this.ctx(interviewId);
     const job = this.find(this.db.jobs, interview.jobId, 'job');
-    return { interview, candidateName: candidate.name, orgName: org.name, job: { id: job.id, title: job.title }, round: { id: round.id, name: round.name, durationMin: round.durationMin, questions: round.questions } };
+    return {
+      interview, candidateName: candidate.name, orgName: org.name, job: { id: job.id, title: job.title },
+      round: { id: round.id, name: round.name, durationMin: round.durationMin, questions: round.questions },
+      candidateStatus: candidate.status,
+      identity: { required: !!round.identityCheck, status: interview.identity?.status ?? 'pending', attemptsLeft: 3 },
+    };
   }
 
   async startInterview(interviewId: string): Promise<InterviewStep> {

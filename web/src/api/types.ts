@@ -50,9 +50,14 @@ export interface Round {
   questions: string[];
   inviteCode: string;
   slots: Slot[];
+  identityCheck?: boolean; // face must match the profile photo before the interview starts
+  requireApproval?: boolean; // HR approves sign-ups before the interview link goes out
 }
 
 export type CandidateStatus =
+  | 'invited' // added by HR, hasn't finished their profile
+  | 'pending_approval' // signed up through the link, waiting for HR
+  | 'declined' // HR declined the sign-up
   | 'scheduled' // booked a slot, interview not started
   | 'in_progress'
   | 'completed' // interview done, waiting for a recruiter
@@ -70,6 +75,10 @@ export interface Candidate {
   cvName: string;
   cvSummary: string;
   cvUrl?: string; // short-lived link to the uploaded CV (server only)
+  phone?: string;
+  hasPhoto?: boolean;
+  photoUrl?: string; // short-lived link to the profile photo (server only)
+  photoDeleted?: boolean;
   skills: string[];
   status: CandidateStatus;
   createdAt: string;
@@ -104,6 +113,17 @@ export interface Report {
 export interface Snapshot {
   at: string;
   url: string;
+  match?: 'matched' | 'no_match' | 'no_face' | 'error';
+  similarity?: number | null;
+}
+
+export interface Identity {
+  status: 'pending' | 'matched' | 'locked' | 'approved';
+  attempts?: number;
+  similarity?: number | null;
+  lastResult?: string;
+  approvedBy?: string;
+  liveUrl?: string;
 }
 
 export interface Interview {
@@ -117,6 +137,7 @@ export interface Interview {
   turns: Turn[];
   snapshots: Snapshot[];
   report?: Report;
+  identity?: Identity;
   startedAt?: string;
   endedAt?: string;
 }
@@ -137,10 +158,12 @@ export interface Decision {
 
 export interface DashboardView {
   org: Org;
-  stats: { openJobs: number; interviewsToday: number; awaitingDecision: number; candidates: number };
+  stats: { openJobs: number; interviewsToday: number; awaitingDecision: number; candidates: number; pendingApproval?: number };
   jobs: (Job & { candidateCount: number; currentRound?: string })[];
   upcoming: { interview: Interview; candidate: Candidate; job: Job; round: Round }[];
   awaiting: { interview: Interview; candidate: Candidate; job: Job; round: Round }[];
+  pending?: { candidate: Candidate; job: Job; round: Round }[];
+  identityLocked?: { interview: Interview; candidate: Candidate; job: Job; round: Round }[];
 }
 
 export interface JobView {
@@ -152,8 +175,9 @@ export interface JobView {
 export interface InviteView {
   orgName: string;
   job: Job;
-  round: Pick<Round, 'id' | 'name' | 'index' | 'durationMin'>;
+  round: Pick<Round, 'id' | 'name' | 'index' | 'durationMin'> & { identityCheck: boolean; requireApproval: boolean };
   openSlots: Slot[];
+  invited?: { name: string; email: string; hasCv: boolean }; // a candidate HR added, on their personal link
 }
 
 export interface CandidateView {
@@ -162,6 +186,7 @@ export interface CandidateView {
   rounds: Round[];
   interviews: Interview[];
   decisions: Decision[];
+  identityRequired?: boolean;
 }
 
 export interface InterviewRoomView {
@@ -170,6 +195,16 @@ export interface InterviewRoomView {
   orgName: string;
   job: Pick<Job, 'id' | 'title'>;
   round: Pick<Round, 'id' | 'name' | 'durationMin' | 'questions'>;
+  candidateStatus?: CandidateStatus;
+  identity?: { required: boolean; status: Identity['status']; attemptsLeft: number };
+}
+
+export interface VerifyResult {
+  status: Identity['status'] | 'not_required';
+  result?: 'matched' | 'no_match' | 'no_face' | 'error';
+  similarity?: number | null;
+  attemptsLeft?: number;
+  message?: string;
 }
 
 // Each answer returns the interviewer's next turn; `done` when the interview has closed.
@@ -198,14 +233,32 @@ export interface NewRound {
   durationMin: number;
   criteria: { name: string; description: string }[];
   questions: string[];
+  identityCheck: boolean;
+  requireApproval: boolean;
 }
 
 export interface JoinInput {
   name: string;
   email: string;
-  cv: File; // PDF or text; the server stores it and Nova reads it
+  cv?: File; // PDF or text; the server stores it and Nova reads it (optional when HR already added one)
+  photo?: File; // face photo for the identity check
+  faceConsent: boolean;
+  phone: string;
+  token?: string; // personal link of a candidate HR added
   slotId: string;
   consent: boolean;
+}
+
+export interface JoinResult {
+  interviewId: string | null; // null until HR approves the sign-up
+  status: CandidateStatus;
+}
+
+export interface NewCandidate {
+  roundId: string;
+  name: string;
+  email: string;
+  cv?: File;
 }
 
 // ---------- Knowledge base ----------

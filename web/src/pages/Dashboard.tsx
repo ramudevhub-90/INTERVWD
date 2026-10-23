@@ -24,6 +24,26 @@ export function Dashboard() {
         <div className="stat"><span className="faint">Candidates</span><b>{data.stats.candidates}</b></div>
       </div>
 
+      {((data.pending?.length ?? 0) > 0 || (data.identityLocked?.length ?? 0) > 0) && (
+        <div className="card" style={{ marginBottom: 16, borderColor: 'var(--warning)' }}>
+          <div className="card-head"><h2>Needs you</h2><span className="faint">Approvals and identity checks</span></div>
+          {data.pending?.map(({ candidate, job }) => (
+            <Link key={candidate.id} className="list-row" to={`/app/candidates/${candidate.id}`}>
+              <div className="avatar">{initials(candidate.name)}</div>
+              <div className="grow"><div style={{ fontWeight: 500 }}>{candidate.name}</div><div className="faint ellipsis">Signed up for {job?.title}</div></div>
+              <span className="badge badge-warning">Approve profile</span>
+            </Link>
+          ))}
+          {data.identityLocked?.map(({ candidate, job }) => (
+            <Link key={candidate.id} className="list-row" to={`/app/candidates/${candidate.id}`}>
+              <div className="avatar">{initials(candidate.name)}</div>
+              <div className="grow"><div style={{ fontWeight: 500 }}>{candidate.name}</div><div className="faint ellipsis">{job.title} · identity check didn't match</div></div>
+              <span className="badge badge-danger">Review photos</span>
+            </Link>
+          ))}
+        </div>
+      )}
+
       <div className="grid cols-2" style={{ alignItems: 'start' }}>
         <div className="card">
           <div className="card-head"><h2>Waiting for your decision</h2><span className="faint">Highest score first</span></div>

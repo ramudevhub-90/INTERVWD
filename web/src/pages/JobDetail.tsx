@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import type { Round } from '../api/types';
@@ -69,7 +70,16 @@ function RoundCard({ round, onChange }: { round: Round; onChange: (r: Round) => 
                 <Icon name={copied ? 'check' : 'copy'} />
               </button>
             </div>
-            <p className="faint" style={{ marginTop: 6 }}>Send it to applicants. They sign up, upload a CV and book a slot. <Link to={`/i/${round.inviteCode}`} target="_blank">Preview as a candidate</Link></p>
+            <div className="row wrap" style={{ marginTop: 8 }}>
+              <a className="btn btn-sm" target="_blank" rel="noreferrer"
+                href={`https://wa.me/?text=${encodeURIComponent(`You're invited to interview for ${round.name.split(' · ')[1] ?? round.name}. Create your profile and pick a time here: ${url}`)}`}>
+                Share on WhatsApp
+              </a>
+              <a className="btn btn-sm" href={`mailto:?subject=${encodeURIComponent('Interview invitation')}&body=${encodeURIComponent(`Create your profile and pick a time for your interview here: ${url}`)}`}>Share by email</a>
+            </div>
+            <p className="faint" style={{ marginTop: 6 }}>
+              Applicants create a profile{round.identityCheck ? ' with a face photo' : ''}, upload a CV and book a slot{round.requireApproval ? '; you approve profiles before they get the interview link' : ''}. <Link to={`/i/${round.inviteCode}`} target="_blank">Preview as a candidate</Link>
+            </p>
           </div>
           <div>
             <h3 style={{ marginBottom: 8 }}>Slots</h3>
@@ -100,11 +110,63 @@ function RoundCard({ round, onChange }: { round: Round; onChange: (r: Round) => 
   );
 }
 
+function AddCandidate({ jobId, rounds, onDone }: { jobId: string; rounds: Round[]; onDone: () => void }) {
+  const [form, setForm] = useState({ name: '', email: '', roundId: rounds[0]?.id ?? '' });
+  const [cv, setCv] = useState<File>();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string>();
+  const [sent, setSent] = useState<string>();
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (form.name.trim().length < 2) return setErr("Enter the candidate's full name.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return setErr("Enter the candidate's email.");
+    if (!form.roundId) return setErr('Add a round first.');
+    setBusy(true);
+    setErr(undefined);
+    try {
+      const out = await api.addCandidate(jobId, { ...form, cv });
+      setSent(out.link);
+      setForm({ ...form, name: '', email: '' });
+      setCv(undefined);
+      onDone();
+    } catch (ex) {
+      setErr((ex as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="card" onSubmit={submit} noValidate style={{ marginBottom: 16 }}>
+      <div className="card-head"><h3>Add a candidate</h3><span className="faint">They're approved already; we email them a personal link</span></div>
+      <div className="grid cols-3" style={{ gap: 12 }}>
+        <label className="field"><span>Full name</span><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Asha Pillai" /></label>
+        <label className="field"><span>Email</span><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="asha@example.com" /></label>
+        <label className="field"><span>Round</span><select value={form.roundId} onChange={(e) => setForm({ ...form, roundId: e.target.value })}>{rounds.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
+      </div>
+      <div className="row wrap">
+        <label className="btn btn-sm" style={{ cursor: 'pointer' }}><Icon name={cv ? 'file' : 'upload'} size={15} /> {cv ? cv.name : 'Attach CV (optional)'}
+          <input type="file" accept=".pdf,.doc,.docx,.txt,.md" className="sr-only" onChange={(e) => setCv(e.target.files?.[0])} />
+        </label>
+        <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? 'Sending…' : 'Add and email invite'}</button>
+      </div>
+      {err && <p className="error">{err}</p>}
+      {sent && (
+        <p className="small" style={{ marginTop: 10 }}>
+          Invite sent. Their personal link: <a href={sent} target="_blank" rel="noreferrer">{sent}</a>{' · '}
+          <a target="_blank" rel="noreferrer" href={`https://wa.me/?text=${encodeURIComponent(`Here's your personal link to finish your profile and book your interview: ${sent}`)}`}>Send on WhatsApp</a>
+        </p>
+      )}
+    </form>
+  );
+}
+
 export function JobDetail() {
   const { jobId = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') ?? 'candidates';
-  const { data, error, setData } = useLoad(() => api.job(jobId), [jobId]);
+  const { data, error, setData, reload } = useLoad(() => api.job(jobId), [jobId]);
   if (!data) return <Loading error={error} />;
   const { job, rounds, candidates } = data;
 
@@ -123,6 +185,8 @@ export function JobDetail() {
       {tab === 'knowledge' ? (
         <KnowledgeTab jobId={job.id} />
       ) : tab === 'candidates' ? (
+        <>
+        {rounds.length > 0 && <AddCandidate jobId={job.id} rounds={rounds} onDone={reload} />}
         <div className="card">
           {candidates.length === 0 && (
             <div className="empty">
@@ -143,6 +207,7 @@ export function JobDetail() {
             </Link>
           ))}
         </div>
+        </>
       ) : (
         <div className="stack">
           {rounds.length === 0 && (

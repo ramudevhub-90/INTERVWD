@@ -19,6 +19,9 @@ export function when(isoDate: string, opts: { date?: boolean } = { date: true })
 }
 
 export const STATUS: Record<CandidateStatus, { label: string; tone: string }> = {
+  invited: { label: 'Invited', tone: '' },
+  pending_approval: { label: 'Needs approval', tone: 'badge-warning' },
+  declined: { label: 'Sign-up declined', tone: 'badge-danger' },
   scheduled: { label: 'Scheduled', tone: '' },
   in_progress: { label: 'In interview', tone: 'badge-accent' },
   completed: { label: 'Needs decision', tone: 'badge-warning' },

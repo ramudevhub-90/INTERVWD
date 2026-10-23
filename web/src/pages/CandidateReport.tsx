@@ -90,6 +90,43 @@ function InterviewReport({ interview, round }: { interview: Interview; round?: R
   );
 }
 
+function IdentityPanel({ photoUrl, photoDeleted, interview, required, onLetIn, busy }: {
+  photoUrl?: string; photoDeleted?: boolean; interview?: Interview; required: boolean; onLetIn: () => void; busy: boolean;
+}) {
+  if (!required && !photoUrl) return null;
+  const id = interview?.identity;
+  const status = id?.status ?? 'pending';
+  const label = { pending: ['Not checked yet', ''], matched: [`Matched${id?.similarity ? ` (${Math.round(id.similarity)}%)` : ''}`, 'badge-success'],
+    locked: ['Didn’t match: interview locked', 'badge-danger'], approved: [`Let in by ${id?.approvedBy ?? 'the team'}`, 'badge-accent'] }[status];
+  const flagged = (interview?.snapshots ?? []).filter((x) => x.match && x.match !== 'matched').length;
+  return (
+    <div className="card">
+      <div className="card-head"><h3 className="row" style={{ gap: 8 }}><Icon name="shield" /> Identity check</h3><span className={`badge ${label[1]}`}>{label[0]}</span></div>
+      {photoDeleted ? (
+        <p className="faint">Face photos were deleted after your decision.</p>
+      ) : (
+        <div className="row" style={{ gap: 10 }}>
+          {[['Profile photo', photoUrl], ['Live check', id?.liveUrl]].map(([t, u]) => (
+            <figure key={t} style={{ margin: 0, flex: 1 }}>
+              {u ? <img src={u} alt={t} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 10, border: '1px solid var(--border)' }} />
+                : <div className="empty faint" style={{ aspectRatio: '1', display: 'grid', placeItems: 'center', border: '1px dashed var(--border)', borderRadius: 10, padding: 6 }}>None yet</div>}
+              <figcaption className="faint" style={{ marginTop: 4 }}>{t}</figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
+      {flagged > 0 && <p className="small" style={{ color: 'var(--warning)', marginTop: 10 }}>{flagged} snapshot{flagged > 1 ? 's' : ''} during the interview didn’t match the profile photo.</p>}
+      {status === 'locked' && (
+        <>
+          <p className="small muted" style={{ marginTop: 10 }}>Face matching can fail on the right person in poor light or on a different camera. Compare the photos yourself.</p>
+          <button className="btn btn-primary btn-block" style={{ marginTop: 8 }} disabled={busy} onClick={onLetIn}>Let them in</button>
+        </>
+      )}
+      <p className="faint" style={{ marginTop: 10 }}>One-to-one match with Amazon Rekognition. Never used to reject anyone.</p>
+    </div>
+  );
+}
+
 export function CandidateReport() {
   const { candidateId = '' } = useParams();
   const { data, error, reload } = useLoad(() => api.candidate(candidateId), [candidateId]);
@@ -101,6 +138,20 @@ export function CandidateReport() {
   const round = rounds.find((r) => r.id === candidate.roundId);
   const next = rounds.find((r) => r.index === (round?.index ?? 0) + 1);
   const finished = interviews.some((i) => i.roundId === candidate.roundId && i.status === 'completed');
+
+  const act = async (key: string, fn: () => Promise<void>) => {
+    setBusy(key as DecisionAction);
+    setErr(undefined);
+    try {
+      await fn();
+      reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  const current = [...interviews].reverse().find((i) => i.roundId === candidate.roundId);
 
   const decide = async (action: DecisionAction) => {
     setBusy(action);
@@ -142,6 +193,18 @@ export function CandidateReport() {
               <div className="row wrap" style={{ gap: 6, marginTop: 10 }}>{candidate.skills.map((s) => <span key={s} className="badge">{s}</span>)}</div>
             )}
           </div>
+
+          {candidate.status === 'pending_approval' && (
+            <div className="card">
+              <h3>Approve this profile?</h3>
+              <p className="faint" style={{ margin: '4px 0 12px' }}>{candidate.name.split(' ')[0]} signed up through the invite link{current ? ` and booked ${when(current.slotStart)}` : ''}. Approving emails their interview link.</p>
+              <button className="btn btn-primary btn-block" disabled={!!busy} onClick={() => act('advance', () => api.reviewSignup(candidate.id, true))}>Approve</button>
+              <button className="btn btn-sm btn-danger btn-block" style={{ marginTop: 8 }} disabled={!!busy} onClick={() => act('reject', () => api.reviewSignup(candidate.id, false))}>Decline</button>
+            </div>
+          )}
+
+          <IdentityPanel photoUrl={candidate.photoUrl} photoDeleted={candidate.photoDeleted} interview={current} required={!!data.identityRequired}
+            busy={!!busy} onLetIn={() => act('hold', () => api.approveIdentity(candidate.id))} />
 
           <div className="card">
             <h3>Your decision</h3>

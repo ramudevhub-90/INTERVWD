@@ -4,7 +4,7 @@
 
 import type { Api } from './index';
 import { ApiError } from './index';
-import type { DecisionAction, JoinInput, KnowledgeDoc, KnowledgeView, NewJob, NewKnowledge, NewRound, Session } from './types';
+import type { DecisionAction, JoinInput, JoinResult, KnowledgeDoc, KnowledgeView, NewCandidate, NewJob, NewKnowledge, NewRound, Session, VerifyResult } from './types';
 
 const TOKEN = 'intervwd-token';
 
@@ -142,12 +142,35 @@ export class HttpApi implements Api {
     await call('POST', `/candidates/${encodeURIComponent(candidateId)}/decision`, { action, note });
   }
 
+  addCandidate(jobId: string, input: NewCandidate) {
+    const form = new FormData();
+    form.set('roundId', input.roundId);
+    form.set('name', input.name);
+    form.set('email', input.email);
+    if (input.cv) form.set('cv', input.cv, input.cv.name);
+    return call<{ id: string; link: string }>('POST', `/jobs/${encodeURIComponent(jobId)}/candidates`, form);
+  }
+
+  async reviewSignup(candidateId: string, approve: boolean) {
+    await call('POST', `/candidates/${encodeURIComponent(candidateId)}/signup`, { approve });
+  }
+
+  async approveIdentity(candidateId: string) {
+    await call('POST', `/candidates/${encodeURIComponent(candidateId)}/identity/approve`);
+  }
+
+  verifyIdentity(interviewId: string, image: Blob) {
+    const form = new FormData();
+    form.set('image', image, 'live.jpg');
+    return call<VerifyResult>('POST', `/interviews/${encodeURIComponent(interviewId)}/verify`, form);
+  }
+
   assistant(message: string) {
     return call<import('./types').AssistantReply>('POST', '/assistant', { message });
   }
 
-  invite(code: string) {
-    return call<import('./types').InviteView>('GET', `/invites/${encodeURIComponent(code)}`);
+  invite(code: string, token?: string) {
+    return call<import('./types').InviteView>('GET', `/invites/${encodeURIComponent(code)}${token ? `?t=${encodeURIComponent(token)}` : ''}`);
   }
 
   join(code: string, input: JoinInput) {
@@ -156,8 +179,12 @@ export class HttpApi implements Api {
     form.set('email', input.email);
     form.set('slotId', input.slotId);
     form.set('consent', String(input.consent));
-    form.set('cv', input.cv, input.cv.name);
-    return call<{ interviewId: string }>('POST', `/invites/${encodeURIComponent(code)}/join`, form);
+    form.set('faceConsent', String(input.faceConsent));
+    form.set('phone', input.phone);
+    if (input.token) form.set('t', input.token);
+    if (input.cv) form.set('cv', input.cv, input.cv.name);
+    if (input.photo) form.set('photo', input.photo, input.photo.name);
+    return call<JoinResult>('POST', `/invites/${encodeURIComponent(code)}/join`, form);
   }
 
   room(interviewId: string) {

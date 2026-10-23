@@ -8,6 +8,9 @@ import type {
   InviteView,
   JobView,
   JoinInput,
+  JoinResult,
+  NewCandidate,
+  VerifyResult,
   KnowledgeDoc,
   KnowledgeView,
   NewJob,
@@ -42,11 +45,15 @@ export interface Api {
   removeKnowledge(jobId: string, docId: string): Promise<void>;
   candidate(candidateId: string): Promise<CandidateView>;
   decide(candidateId: string, action: DecisionAction, note: string): Promise<void>;
+  addCandidate(jobId: string, input: NewCandidate): Promise<{ id: string; link: string }>;
+  reviewSignup(candidateId: string, approve: boolean): Promise<void>;
+  approveIdentity(candidateId: string): Promise<void>;
   assistant(message: string): Promise<AssistantReply>;
 
   // Candidate
-  invite(code: string): Promise<InviteView>;
-  join(code: string, input: JoinInput): Promise<{ interviewId: string }>;
+  invite(code: string, token?: string): Promise<InviteView>;
+  join(code: string, input: JoinInput): Promise<JoinResult>;
+  verifyIdentity(interviewId: string, image: Blob): Promise<VerifyResult>;
   room(interviewId: string): Promise<InterviewRoomView>;
   startInterview(interviewId: string): Promise<InterviewStep>;
   answer(interviewId: string, text: string): Promise<InterviewStep>;

@@ -28,7 +28,10 @@ const TEMPLATES: Record<string, { name: string; criteria: [string, string][]; qu
 export function NewRound() {
   const { jobId = '' } = useParams();
   const { data, error: loadError } = useLoad(() => api.job(jobId), [jobId]);
-  const [form, setForm] = useState(() => ({ name: TEMPLATES.screen.name, durationMin: 20, criteria: TEMPLATES.screen.criteria.map(([name, description]) => ({ name, description })), questions: [...TEMPLATES.screen.questions] }));
+  const [form, setForm] = useState(() => ({
+    name: TEMPLATES.screen.name, durationMin: 20, criteria: TEMPLATES.screen.criteria.map(([name, description]) => ({ name, description })),
+    questions: [...TEMPLATES.screen.questions], identityCheck: true, requireApproval: true,
+  }));
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -104,6 +107,19 @@ export function NewRound() {
             </div>
           ))}
           <button type="button" className="btn btn-sm" onClick={() => setForm({ ...form, questions: [...form.questions, ''] })}><Icon name="plus" size={15} /> Add question</button>
+        </div>
+
+        <div className="card">
+          <h3 style={{ marginBottom: 10 }}>Who gets in</h3>
+          {([
+            ['requireApproval', 'Approve sign-ups first', 'People who sign up through the invite link wait for your approval before they get their interview link. Candidates you add yourself are approved already.'],
+            ['identityCheck', 'Identity check required', 'Candidates upload a face photo with their profile. Before the interview starts, a live camera check must match it (Amazon Rekognition). After 3 failed tries the interview is locked until you let them in. It never rejects anyone by itself.'],
+          ] as const).map(([key, label, hint]) => (
+            <label key={key} className="row" style={{ alignItems: 'flex-start', padding: '8px 0', cursor: 'pointer' }}>
+              <input type="checkbox" checked={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.checked })} />
+              <span><span className="small" style={{ fontWeight: 600 }}>{label}</span><br /><span className="faint">{hint}</span></span>
+            </label>
+          ))}
         </div>
 
         <div className="row">
