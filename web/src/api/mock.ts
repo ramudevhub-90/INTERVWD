@@ -546,6 +546,10 @@ export class MockApi implements Api {
     return { watchers: [], takenOverBy: null, status: 'in_progress' };
   }
 
+  async liveReport() {
+    return undefined;
+  }
+
   async liveHost(): Promise<import('./types').CallJoin> {
     throw new ApiError('Watching live needs the live server (Amazon Chime SDK).', 409);
   }

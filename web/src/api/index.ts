@@ -70,6 +70,7 @@ export interface Api {
   submitScorecard(interviewId: string, card: Scorecard): Promise<void>;
   hostCall(interviewId: string): Promise<CallJoin>;
   liveHost(interviewId: string): Promise<CallJoin>;
+  liveReport(interviewId: string, stage: string, detail?: string): Promise<unknown>;
   liveState(interviewId: string): Promise<LiveView>;
   liveControl(interviewId: string, action: 'ask' | 'take_over' | 'hand_back', question?: string): Promise<LiveView>;
   assistant(message: string): Promise<AssistantReply>;

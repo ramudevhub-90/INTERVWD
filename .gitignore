@@ -11,3 +11,7 @@ infra/.origin-secret
 .env.local
 .DS_Store
 infra/.demo-code
+
+# Demo video build output (large; not part of the app)
+demo/video/
+demo/*.mp4

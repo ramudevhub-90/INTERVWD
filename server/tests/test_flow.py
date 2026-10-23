@@ -801,3 +801,25 @@ def test_quiet_interviews_are_not_live(env):
     d = client.get("/api/dashboard", headers=h).json()
     assert d["week"]["liveNow"] == 0 and iv not in [r["interview"]["id"] for r in d["upcoming"]]
     assert [r["interview"]["id"] for r in d["unfinished"]] == [iv]
+
+
+def test_candidate_call_status_reaches_the_team(env):
+    client, _ = env
+    h = demo_login(client)
+    iv = "iv_demo_vikram"
+    client.post("/api/candidates/cand_vikram/identity/approve", headers=h)
+    client.post(f"/api/interviews/{iv}/start")
+    assert client.get(f"/api/interviews/{iv}/live/state", headers=h).json()["candidateCall"] is None
+    client.post(f"/api/interviews/{iv}/live/report", json={"stage": "failed", "detail": "NotReadableError: camera busy"})
+    call = client.get(f"/api/interviews/{iv}/live/state", headers=h).json()["candidateCall"]
+    assert call["stage"] == "failed" and "camera busy" in call["detail"]
+
+
+def test_empty_snapshots_are_not_mismatches(env):
+    client, _ = env
+    h = demo_login(client)
+    slot = open_slot(client, h, "round_backend_1")
+    iv = book(client, "nw-backend-r1", slot).json()["interviewId"]
+    svc = client.app.state.svc
+    svc.add_snapshot(iv, b" ", "image/jpeg")  # the fake matcher sees no face in an empty frame
+    assert svc.store.get("interview", iv)["snapshots"] == []

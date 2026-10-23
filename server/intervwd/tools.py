@@ -77,13 +77,22 @@ def get_todays_interviews(svc: Service, s: Doc, tz_offset_min: int = 0) -> Doc:
     today = [iv for iv in svc.interviews(s["orgId"]) if _same_day(iv["slotStart"], now, tz_offset_min)]
     names = {c["id"]: c["name"] for c in svc.all_candidates(s["orgId"])}
     done = sorted([iv for iv in today if iv.get("report")], key=lambda iv: -iv["report"]["overall"])
-    left = [iv for iv in today if iv["status"] != "completed"]
+    from .service import _parse
+
+    # Only what is really still ahead: in progress right now, or booked and not yet past (with a little grace).
+    live = [iv for iv in today if iv["status"] == "in_progress" and svc._active(iv)]
+    stopped = [iv for iv in today if iv["status"] == "in_progress" and not svc._active(iv)]
+    left = [iv for iv in today if iv["status"] == "scheduled" and (now - _parse(iv["slotStart"])).total_seconds() < 30 * 60]
     parts = []
     if done:
         top = done[0]
         parts.append(f"{len(done)} interview{'s' if len(done) > 1 else ''} finished today. {names.get(top['candidateId'])} scored highest, {top['report']['overall']}.")
     else:
         parts.append("No interviews have finished today yet.")
+    if live:
+        parts.append("Interviewing now: " + ", ".join(str(names.get(iv["candidateId"])) for iv in live) + ".")
+    if stopped:
+        parts.append(", ".join(str(names.get(iv["candidateId"])) for iv in stopped) + (" stopped partway." if len(stopped) == 1 else " stopped partway."))
     if left:
         parts.append("Still to come: " + ", ".join(f"{names.get(iv['candidateId'])} at {_time(iv['slotStart'], tz_offset_min)}" for iv in left) + ".")
     if len(done) > 1:
@@ -92,6 +101,8 @@ def get_todays_interviews(svc: Service, s: Doc, tz_offset_min: int = 0) -> Doc:
         "say": " ".join(parts),
         "finished": [{"candidate": names.get(iv["candidateId"]), "score": iv["report"]["overall"]} for iv in done],
         "upcoming": [{"candidate": names.get(iv["candidateId"]), "at": iv["slotStart"]} for iv in left],
+        "inProgress": [names.get(iv["candidateId"]) for iv in live],
+        "stoppedPartway": [names.get(iv["candidateId"]) for iv in stopped],
     }
 
 

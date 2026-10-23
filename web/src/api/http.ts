@@ -219,6 +219,10 @@ export class HttpApi implements Api {
     return call<{ watchers: string[]; takenOverBy: string | null; status: string }>('GET', `/interviews/${encodeURIComponent(interviewId)}/live/status`);
   }
 
+  liveReport(interviewId: string, stage: string, detail = '') {
+    return call<unknown>('POST', `/interviews/${encodeURIComponent(interviewId)}/live/report`, { stage, detail }).catch(() => undefined);
+  }
+
   liveHost(interviewId: string) {
     return call<import('./types').CallJoin>('POST', `/interviews/${encodeURIComponent(interviewId)}/live/host`);
   }

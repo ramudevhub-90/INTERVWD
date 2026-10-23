@@ -168,7 +168,8 @@ function IdentityPanel({ photoUrl, photoDeleted, interview, required, onLetIn, b
   const status = id?.status ?? 'pending';
   const label = { pending: ['Not checked yet', ''], matched: [`Matched${id?.similarity ? ` (${Math.round(id.similarity)}%)` : ''}`, 'badge-success'],
     locked: ['Didn’t match: interview locked', 'badge-danger'], approved: [`Let in by ${id?.approvedBy ?? 'the team'}`, 'badge-accent'] }[status];
-  const flagged = (interview?.snapshots ?? []).filter((x) => x.match && x.match !== 'matched').length;
+  // Only a different face counts; a dark or empty frame ("no face") isn't a mismatch.
+  const flagged = (interview?.snapshots ?? []).filter((x) => x.match === 'no_match').length;
   return (
     <div className="card">
       <div className="card-head"><h3 className="row" style={{ gap: 8 }}><Icon name="shield" /> Identity check</h3><span className={`badge ${label[1]}`}>{label[0]}</span></div>

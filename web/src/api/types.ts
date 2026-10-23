@@ -409,4 +409,6 @@ export interface LiveView {
   takenOverBy: string | null;
   pendingQuestions: string[];
   watchers: string[];
+  /** How the candidate's side of the call is doing, as their browser reported it. */
+  candidateCall?: { stage: string; detail: string; at: string } | null;
 }

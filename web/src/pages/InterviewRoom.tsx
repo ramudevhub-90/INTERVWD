@@ -79,6 +79,11 @@ export function InterviewRoom() {
     ctx.translate(320, 0);
     ctx.scale(-1, 1); // match the mirrored preview
     ctx.drawImage(v, 0, 0, 320, 240);
+    // Skip dark or blank frames (a paused camera, a phone switching apps): they'd only look like a mismatch.
+    const px = ctx.getImageData(0, 0, 320, 240).data;
+    let sum = 0;
+    for (let i = 0; i < px.length; i += 4 * 97) sum += px[i] + px[i + 1] + px[i + 2];
+    if (sum / (3 * (px.length / (4 * 97))) < 18) return;
     c.toBlob((b) => b && api.snapshot(id, b).catch(() => undefined), 'image/jpeg', 0.7);
   }, [id]);
 

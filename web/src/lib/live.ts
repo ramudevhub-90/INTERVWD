@@ -20,46 +20,58 @@ export function useLive(interviewId: string, active: boolean, teamVideo?: React.
   const audio = useRef<HTMLAudioElement>();
   const previous = useRef<string | null>(null);
 
-  // Join the call once the interview is running. The Chime SDK loads only now.
+  // Join the call once the interview is running. The Chime SDK loads only now. Each step is reported
+  // to the server, so the team sees "connected" or the exact problem; if the first try doesn't connect
+  // (or reusing the page's camera fails, as on some phones), it tries once more with a fresh capture.
   useEffect(() => {
     if (!active || api.mode !== 'http') return;
-    let stop: (() => void) | undefined;
-    const own = stream?.getVideoTracks().some((t) => t.readyState === 'live') ? stream : undefined;
     let cancelled = false;
-    (async () => {
+    let stop: (() => void) | undefined;
+    const report = (stage: string, detail = '') => { if (!cancelled) api.liveReport(interviewId, stage, detail); };
+    const attempt = async (reuse: boolean, tries: number): Promise<void> => {
+      const own = reuse && stream?.getVideoTracks().some((t) => t.readyState === 'live') ? stream : undefined;
+      let connected = false;
+      let retry: ReturnType<typeof setTimeout> | undefined;
       try {
+        report('joining', `${reuse ? 'reusing the page camera' : 'fresh capture'}; ${navigator.userAgent.slice(0, 120)}`);
         const seat = await api.joinLive(interviewId);
         const chime = await import('amazon-chime-sdk-js');
         if (cancelled) return;
         const logger = new chime.ConsoleLogger('intervwd-live', chime.LogLevel.ERROR);
         const session = new chime.DefaultMeetingSession(new chime.MeetingSessionConfiguration(seat.meeting, seat.attendee), logger, new chime.DefaultDeviceController(logger));
         const av = session.audioVideo;
-        // Each device on its own: a busy camera still lets the team hear the candidate, and the reverse.
-        let camOn = false;
+        const devices: string[] = [];
         try {
-          if (own?.getAudioTracks().length) await av.startAudioInput(new MediaStream(own.getAudioTracks()));
+          if (own?.getAudioTracks().length) { await av.startAudioInput(new MediaStream(own.getAudioTracks())); devices.push('mic: page'); }
           else {
             const mics = await av.listAudioInputDevices();
-            if (mics[0]) await av.startAudioInput(mics[0].deviceId);
+            if (mics[0]) { await av.startAudioInput(mics[0].deviceId); devices.push('mic: own'); } else devices.push('mic: none');
           }
-        } catch { /* no microphone */ }
+        } catch (e) { devices.push(`mic failed: ${(e as Error).name}`); }
+        let camOn = false;
         try {
-          if (own) { await av.startVideoInput(new MediaStream(own.getVideoTracks())); camOn = true; }
+          if (own) { await av.startVideoInput(new MediaStream(own.getVideoTracks())); camOn = true; devices.push('camera: page'); }
           else {
             const cams = await av.listVideoInputDevices();
-            if (cams[0]) { await av.startVideoInput(cams[0].deviceId); camOn = true; }
+            if (cams[0]) { await av.startVideoInput(cams[0].deviceId); camOn = true; devices.push('camera: own'); } else devices.push('camera: none');
           }
-        } catch { /* no camera */ }
+        } catch (e) { devices.push(`camera failed: ${(e as Error).name}`); }
         // The team member's voice: an <audio> element in the page (some browsers won't play a detached one).
         if (!audio.current) {
           audio.current = Object.assign(document.createElement('audio'), { autoplay: true });
           audio.current.setAttribute('aria-hidden', 'true');
+          audio.current.setAttribute('playsinline', '');
           document.body.appendChild(audio.current);
         }
         await av.bindAudioElement(audio.current);
         audio.current.play().catch(() => undefined);
-        // The team member's camera (when they take over): shown on the candidate's screen.
         av.addObserver({
+          audioVideoDidStart: () => {
+            connected = true;
+            report('connected', devices.join(', '));
+          },
+          audioVideoDidStop: (status) => report('stopped', `code ${status.statusCode()}`),
+          // The team member's camera (when they take over): shown on the candidate's screen.
           videoTileDidUpdate: (tile) => {
             if (tile.localTile || !tile.boundAttendeeId || tile.tileId == null || tile.isContent) return;
             const el = teamVideo?.current;
@@ -74,7 +86,8 @@ export function useLive(interviewId: string, active: boolean, teamVideo?: React.
         });
         av.start();
         if (camOn) av.startLocalVideoTile();
-        stop = () => {
+        const close = () => {
+          clearTimeout(retry);
           audio.current?.remove();
           audio.current = undefined;
           av.stopLocalVideoTile();
@@ -85,10 +98,19 @@ export function useLive(interviewId: string, active: boolean, teamVideo?: React.
             av.stopAudioInput().catch(() => undefined);
           }
         };
-      } catch {
-        /* live watching is optional; the interview carries on without it */
+        stop = close;
+        // Not connected in 15 seconds: report it and try once more, this time with a fresh capture.
+        retry = setTimeout(() => {
+          if (connected || cancelled) return;
+          report('timeout', devices.join(', '));
+          if (tries > 0) { close(); attempt(false, tries - 1); }
+        }, 15000);
+      } catch (e) {
+        report('failed', `${(e as Error).name}: ${(e as Error).message}`.slice(0, 280));
+        if (tries > 0 && !cancelled) setTimeout(() => attempt(false, tries - 1), 2000);
       }
-    })();
+    };
+    attempt(true, 1);
     return () => {
       cancelled = true;
       stop?.();

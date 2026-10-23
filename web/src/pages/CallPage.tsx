@@ -117,6 +117,17 @@ export function WatchLive() {
       <div className="split-wide">
         <div className="stack">
           <VideoCall seat={seat.data} otherName={seat.data.candidateName} listenOnly unmuteSignal={taken} />
+          {!done && view && (() => {
+            const c = view.candidateCall;
+            const label = !c ? 'not reported yet (their page may be an older version: ask them to reload)'
+              : c.stage === 'connected' ? 'connected' : c.stage === 'joining' ? 'joining…' : c.stage === 'timeout' ? 'couldn’t connect, retrying' : `${c.stage}`;
+            const bad = c && ['failed', 'timeout', 'stopped'].includes(c.stage);
+            return (
+              <p className={`small ${bad ? 'error' : 'faint'}`} style={{ marginTop: -6 }} title={c?.detail}>
+                Candidate’s call: {label}{bad && c?.detail ? ` (${c.detail})` : ''}
+              </p>
+            );
+          })()}
           <div className="card">
             <h3 style={{ marginBottom: 10 }}>Step in</h3>
             {done ? <p className="muted small">The interview has ended. <Link to={`/app/candidates/${seat.data.candidateId}`}>See the report</Link></p> : (

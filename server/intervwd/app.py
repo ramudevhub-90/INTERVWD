@@ -346,6 +346,11 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
     async def live_candidate(request: Request) -> Doc:
         return svc.join_live(request.path_params["interview_id"], "candidate")
 
+    @route("/api/interviews/{interview_id}/live/report", ["POST"])
+    async def live_report(request: Request) -> Doc:
+        d = await body(request)
+        return svc.call_report(request.path_params["interview_id"], str(d.get("stage", "")), str(d.get("detail", "")))
+
     @route("/api/interviews/{interview_id}/live/status", ["GET"])
     async def live_status(request: Request) -> Doc:
         return svc.live_status(request.path_params["interview_id"])

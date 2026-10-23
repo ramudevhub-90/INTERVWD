@@ -1050,6 +1050,14 @@ class Service:
         live = self._live(interview_id)
         return {"watchers": self._watchers(interview_id), "takenOverBy": (live.get("paused") or {}).get("by"), "status": iv["status"]}
 
+    def call_report(self, interview_id: str, stage: str, detail: str = "") -> Doc:
+        """The candidate's browser reports how its side of the live call is doing (joining, connected,
+        failed and why), so the team can see it instead of a silent 'waiting'. Its own record: never races answers."""
+        self._get("interview", interview_id, "interview")
+        doc = {"stage": stage.strip()[:40], "detail": detail.strip()[:300], "at": engine.now()}
+        self.store.put("calldiag", interview_id, doc, expires=int(datetime.now(timezone.utc).timestamp()) + 6 * 3600)
+        return doc
+
     def live_state(self, org_id: str, interview_id: str, by: str) -> Doc:
         """The recruiter's view, polled while watching: transcript, progress, and a heartbeat."""
         iv = self._owned("interview", interview_id, org_id, "interview")
@@ -1057,7 +1065,8 @@ class Service:
         live = self._live(interview_id)  # read only: heartbeats never write the live document
         round = self._get("round", iv["roundId"], "round")
         return {"status": iv["status"], "turns": iv["turns"], "progress": engine.progress(iv, round), "takenOverBy": (live.get("paused") or {}).get("by"),
-                "pendingQuestions": [q["text"] for q in live.get("teamQuestions", [])], "watchers": self._watchers(interview_id)}
+                "pendingQuestions": [q["text"] for q in live.get("teamQuestions", [])], "watchers": self._watchers(interview_id),
+                "candidateCall": self.store.get("calldiag", interview_id)}
 
     def live_control(self, org_id: str, interview_id: str, action: str, by: str, question: str = "") -> Doc:
         iv = self._owned("interview", interview_id, org_id, "interview")
@@ -1183,14 +1192,16 @@ class Service:
         if not content_type.startswith("image/") or len(image) > 400_000:
             raise Problem("Snapshots must be small images.")
         key = f"snapshots/{iv['orgId']}/{iv['id']}/{len(iv['snapshots'])}.jpg"
-        self.blobs.save(key, image, content_type)
         snap: Doc = {"at": engine.now(), "key": key}
         # Compare against the profile photo too, to catch someone else taking over mid-interview.
         c = self.store.get("candidate", iv["candidateId"]) or {}
         ref = self.blobs.load(c["photoKey"]) if c.get("photoKey") else None
         if ref:
             m = self.faces.compare(ref[0], image)
+            if m.status == "no_face":
+                return  # an empty or dark frame: nothing to keep, and not a mismatch
             snap.update(match=m.status, similarity=m.similarity)
+        self.blobs.save(key, image, content_type)
         iv["snapshots"].append(snap)
         self.save_interview(iv)
 
