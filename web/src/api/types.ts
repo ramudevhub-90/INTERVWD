@@ -129,7 +129,7 @@ export interface Report {
 export interface Triage {
   band: 'fast_track' | 'review' | 'below';
   reasons: string[];
-  rule: { minOverall: number; minEach: number };
+  rule?: { minOverall: number; minEach: number };
 }
 
 export interface Snapshot {

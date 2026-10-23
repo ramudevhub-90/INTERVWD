@@ -290,7 +290,7 @@ export function CandidateReport() {
                 {current.triage.reasons.map((r) => <li key={r} style={{ marginBottom: 4 }}>{r}</li>)}
               </ul>
               <p className="faint" style={{ marginTop: 8 }}>
-                Bar for this round: overall {current.triage.rule.minOverall.toFixed(1)}, each criterion {current.triage.rule.minEach.toFixed(1)}.
+                {current.triage.rule ? `Bar for this round: overall ${current.triage.rule.minOverall.toFixed(1)}, each criterion ${current.triage.rule.minEach.toFixed(1)}.` : null}
                 {current.triage.band === 'below' ? ' The AI never rejects anyone; you decide.' : ''}
               </p>
             </div>

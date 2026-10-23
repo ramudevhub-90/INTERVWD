@@ -205,7 +205,7 @@ def reset_demo(svc: Service) -> None:
                            ("iv_demo_neha", "below", "Below the bar."), ("iv_demo_arjun", "fast_track", "Clear pass.")):
         doc = s.get("interview", iid)
         if doc:
-            doc["triage"] = {"band": band, "reasons": [why]}
+            doc["triage"] = {"band": band, "reasons": [why], "rule": {"minOverall": 4.0, "minEach": 3.0}}
             svc.save_interview(doc)
     for cid in ("cand_rahul", "cand_ana", "cand_neha", "cand_vikram", "cand_meera"):
         for d in svc.decisions(cid):
@@ -249,7 +249,8 @@ def _history(svc: Service, rounds: dict[str, Doc]) -> None:
         iid = f"iv_{cid[5:]}"
         svc.save_interview({"id": iid, "orgId": DEMO_ORG, "jobId": job, "roundId": r["id"], "candidateId": cid, "slotStart": _at(start), "status": "completed",
                             "turns": _turns(q, turns), "snapshots": [], "report": report, "startedAt": _at(start), "endedAt": _at(end_h),
-                            "triage": {"band": band, "reasons": [reason] if reason else (["Clear pass."] if band == "fast_track" else ["Below the bar."])},
+                            "triage": {"band": band, "reasons": [reason] if reason else (["Clear pass."] if band == "fast_track" else ["Below the bar."]),
+                                       "rule": r.get("autoAdvance") or {"minOverall": 4.0, "minEach": 3.0}},
                             **({"identity": {"status": ident}} if ident else {})})
         for d in svc.decisions(cid):
             s.delete("decision", d["id"])
