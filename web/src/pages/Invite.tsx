@@ -5,7 +5,7 @@ import { api } from '../api';
 import type { JoinResult } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PublicTop } from '../components/Shell';
-import { Loading, possessive, useLoad, when } from '../lib/util';
+import { cameraProblem, Loading, possessive, useLoad, when } from '../lib/util';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_CV = 5 * 1024 * 1024;
@@ -20,7 +20,7 @@ function SelfieCamera({ onPhoto, onClose }: { onPhoto: (f: File) => void; onClos
     navigator.mediaDevices?.getUserMedia({ video: { width: 640, height: 480 } }).then((s) => {
       stream = s;
       if (video.current) video.current.srcObject = s;
-    }).catch(() => setErr('Allow the camera, or upload a photo instead.'));
+    }).catch((e) => setErr(`${cameraProblem(e)} Or upload a photo instead.`));
     return () => stream?.getTracks().forEach((t) => t.stop());
   }, []);
   const take = () => {

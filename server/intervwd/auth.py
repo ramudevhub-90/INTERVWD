@@ -82,15 +82,18 @@ class Mailer:
         if not self.sender:
             log.info("Email to %s: %s\n%s%s", to, subject, text, "\n[calendar invite attached]" if invite else "")
             return True
+        from .email_html import render
+
+        page = render(subject, text)
         try:
             if invite:
                 self._ses().send_email(FromEmailAddress=self.sender, Destination={"ToAddresses": [to]},
-                                       Content={"Raw": {"Data": _with_invite(self.sender, to, subject, text, invite)}})
+                                       Content={"Raw": {"Data": _with_invite(self.sender, to, subject, text, invite, page)}})
             else:
                 self._ses().send_email(
                     FromEmailAddress=self.sender,
                     Destination={"ToAddresses": [to]},
-                    Content={"Simple": {"Subject": {"Data": subject}, "Body": {"Text": {"Data": text}}}},
+                    Content={"Simple": {"Subject": {"Data": subject}, "Body": {"Text": {"Data": text}, "Html": {"Data": page}}}},
                 )
             return True
         except Exception:
@@ -98,7 +101,7 @@ class Mailer:
             return False
 
 
-def _with_invite(sender: str, to: str, subject: str, text: str, invite: str) -> bytes:
+def _with_invite(sender: str, to: str, subject: str, text: str, invite: str, page: str = "") -> bytes:
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
@@ -106,6 +109,8 @@ def _with_invite(sender: str, to: str, subject: str, text: str, invite: str) -> 
     msg["Subject"], msg["From"], msg["To"] = subject, sender, to
     body = MIMEMultipart("alternative")
     body.attach(MIMEText(text, "plain", "utf-8"))
+    if page:
+        body.attach(MIMEText(page, "html", "utf-8"))
     body.attach(MIMEText(invite, "calendar;method=REQUEST", "utf-8"))  # shown inline as an invite
     msg.attach(body)
     part = MIMEText(invite, "calendar", "utf-8")

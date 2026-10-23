@@ -4,7 +4,7 @@ import { api } from '../api';
 import type { InterviewStep, Turn, VerifyResult } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PublicTop } from '../components/Shell';
-import { Loading, possessive, useLoad, when } from '../lib/util';
+import { cameraProblem, Loading, possessive, useLoad, when } from '../lib/util';
 import { canListen, listen, speak, stopSpeaking } from '../lib/speech';
 import { useLive } from '../lib/live';
 
@@ -48,7 +48,7 @@ export function InterviewRoom() {
         live = s;
         setStream(s);
       })
-      .catch(() => setMediaError('Allow camera and microphone access in your browser to take the interview.'));
+      .catch((e) => setMediaError(cameraProblem(e)));
     return () => {
       live?.getTracks().forEach((t) => t.stop());
       listener.current?.stop();

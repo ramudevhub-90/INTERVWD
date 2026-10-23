@@ -97,3 +97,12 @@ export const inviteUrl = (round: { inviteCode: string; publicPath?: string }) =>
 
 /** "Northwind Labs'" and "Acme's". */
 export const possessive = (name: string) => (name.endsWith('s') ? `${name}'` : `${name}'s`);
+
+/** Why the camera didn't start, in words a candidate can act on. */
+export function cameraProblem(e: unknown): string {
+  const name = (e as { name?: string })?.name;
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Camera access is blocked. Allow it in the address bar (the camera icon), then try again.';
+  if (name === 'NotReadableError' || name === 'AbortError') return 'Your camera is busy: another tab or app (Zoom, Teams, another Intervwd tab) is using it. Close that, then try again.';
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'No camera found on this device.';
+  return 'The camera didn’t start. Try again, or use another browser.';
+}
