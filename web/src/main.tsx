@@ -17,6 +17,7 @@ import { Settings } from './pages/Settings';
 // The video call pages bring in the Chime SDK, so they load only when someone opens a call.
 const CandidateCall = lazy(() => import('./pages/CallPage').then((m) => ({ default: m.CandidateCall })));
 const HostCall = lazy(() => import('./pages/CallPage').then((m) => ({ default: m.HostCall })));
+const WatchLive = lazy(() => import('./pages/CallPage').then((m) => ({ default: m.WatchLive })));
 const later = (el: JSX.Element) => <Suspense fallback={<div className="empty faint">Loading the call…</div>}>{el}</Suspense>;
 import { Invite } from './pages/Invite';
 import { InterviewRoom } from './pages/InterviewRoom';
@@ -51,6 +52,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="alexa" element={<AlexaSimulator />} />
             <Route path="settings" element={<Settings />} />
             <Route path="call/:id" element={later(<HostCall />)} />
+            <Route path="live/:id" element={later(<WatchLive />)} />
           </Route>
           <Route path="/:org/:round" element={<Invite />} />
           <Route path="*" element={<Navigate to="/" replace />} />

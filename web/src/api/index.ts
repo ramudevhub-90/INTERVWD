@@ -4,6 +4,7 @@ import type {
   CheckIn,
   HiringDay,
   KioskInfo,
+  LiveView,
   CandidateView,
   DashboardView,
   DecisionAction,
@@ -67,6 +68,9 @@ export interface Api {
   approveIdentity(candidateId: string): Promise<void>;
   submitScorecard(interviewId: string, card: Scorecard): Promise<void>;
   hostCall(interviewId: string): Promise<CallJoin>;
+  liveHost(interviewId: string): Promise<CallJoin>;
+  liveState(interviewId: string): Promise<LiveView>;
+  liveControl(interviewId: string, action: 'ask' | 'take_over' | 'hand_back', question?: string): Promise<LiveView>;
   assistant(message: string): Promise<AssistantReply>;
 
   // Candidate
@@ -74,6 +78,8 @@ export interface Api {
   join(code: string, input: JoinInput): Promise<JoinResult>;
   verifyIdentity(interviewId: string, image: Blob): Promise<VerifyResult>;
   joinCall(interviewId: string): Promise<CallJoin>;
+  joinLive(interviewId: string): Promise<CallJoin>;
+  liveStatus(interviewId: string): Promise<{ watchers: string[]; takenOverBy: string | null; status: string }>;
   practiceStart(interviewId: string): Promise<{ intro: string; question: string; index: number; of: number; jobTitle: string; orgName: string }>;
   practiceAnswer(interviewId: string, text: string): Promise<{ feedback: { strength: string; improve: string; tip: string }; question: string | null; index: number; of: number }>;
   room(interviewId: string): Promise<InterviewRoomView>;

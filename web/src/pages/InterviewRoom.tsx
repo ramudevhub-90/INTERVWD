@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon';
 import { PublicTop } from '../components/Shell';
 import { Loading, possessive, useLoad, when } from '../lib/util';
 import { canListen, listen, speak, stopSpeaking } from '../lib/speech';
+import { useLive } from '../lib/live';
 
 const SNAPSHOT_EVERY_MS = 90_000;
 
@@ -25,6 +26,7 @@ export function InterviewRoom() {
   const [progress, setProgress] = useState<InterviewStep['progress']>();
   const [err, setErr] = useState<string>();
   const [check, setCheck] = useState<VerifyResult & { busy?: boolean }>();
+  const live = useLive(id, stage === 'live');
   const video = useRef<HTMLVideoElement>(null);
   const listener = useRef<{ stop(): void }>();
   const log = useRef<HTMLDivElement>(null);
@@ -172,6 +174,29 @@ export function InterviewRoom() {
     });
   };
 
+  // Someone from the team took over: the AI stops and says so. When they hand back, it carries on.
+  useEffect(() => {
+    if (!live.takenOverBy) return;
+    listener.current?.stop();
+    stopSpeaking();
+    setMode('idle');
+    const text = `${live.takenOverBy.split(' ')[0]} from ${data?.orgName ?? 'the team'} has joined and will take it from here.`;
+    setTurns((t) => [...t, { role: 'interviewer', kind: 'handover', text, at: new Date().toISOString(), questionIndex: -1 }]);
+    speak(text);
+  }, [live.takenOverBy]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!live.resumed) return;
+    api.room(id).then(async (r) => {
+      const latest = r.interview.turns.filter((t) => t.role === 'interviewer').pop();
+      if (latest?.kind === 'handover') {
+        setTurns((t) => [...t, latest]);
+        setMode('speaking');
+        await speak(latest.text);
+      }
+      startListening();
+    }).catch(() => undefined);
+  }, [live.resumed]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const repeat = async () => {
     const last = [...turns].reverse().find((t) => t.role === 'interviewer');
     if (!last) return;
@@ -200,7 +225,10 @@ export function InterviewRoom() {
         <p className="faint">{data.orgName} · {data.job.title}</p>
         <h2>{data.round.name}</h2>
       </div>
-      {progress && stage === 'live' && <span className="badge badge-accent">Question {progress.question} of {progress.of}</span>}
+      <div className="row" style={{ gap: 8 }}>
+        {live.watchers.length > 0 && <span className="badge badge-warning"><Icon name="eye" size={13} /> {live.watchers.map((w) => w.split(' ')[0]).join(', ')} from {data.orgName} {live.watchers.length > 1 ? 'are' : 'is'} watching</span>}
+        {progress && stage === 'live' && <span className="badge badge-accent">Question {progress.question} of {progress.of}</span>}
+      </div>
     </div>
   );
 
@@ -308,7 +336,7 @@ export function InterviewRoom() {
                   <Icon name={mode === 'listening' ? 'mic' : mode === 'thinking' ? 'sparkle' : 'speaker'} size={24} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <p className="faint" style={{ marginBottom: 4 }}>{mode === 'speaking' ? 'Interviewer is speaking' : mode === 'listening' ? 'Listening to your answer' : mode === 'thinking' ? 'Interviewer is thinking…' : 'Your turn'}</p>
+                  <p className="faint" style={{ marginBottom: 4 }}>{live.takenOverBy ? `${live.takenOverBy} is talking with you on the call` : mode === 'speaking' ? 'Interviewer is speaking' : mode === 'listening' ? 'Listening to your answer' : mode === 'thinking' ? 'Interviewer is thinking…' : 'Your turn'}</p>
                   <p className="question">{current?.text ?? '…'}</p>
                 </div>
               </div>
@@ -318,7 +346,7 @@ export function InterviewRoom() {
                 <textarea rows={4} value={draft} readOnly={!typing && mode === 'listening'} onChange={(e) => { setDraft(e.target.value); setErr(undefined); }} placeholder={typing ? 'Type your answer' : mode === 'listening' ? 'Start speaking…' : ''} />
               </div>
               <div className="row wrap">
-                <button className="btn btn-primary" onClick={submit} disabled={mode === 'speaking' || mode === 'thinking'}><Icon name="send" /> Finish answer</button>
+                <button className="btn btn-primary" onClick={submit} disabled={mode === 'speaking' || mode === 'thinking' || !!live.takenOverBy}><Icon name="send" /> Finish answer</button>
                 <button className="btn" onClick={repeat} disabled={mode === 'thinking'}><Icon name="repeat" /> Repeat</button>
                 {canListen && (
                   <button className="btn btn-ghost" onClick={toggleTyping} disabled={mode === 'speaking' || mode === 'thinking'}>

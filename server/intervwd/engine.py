@@ -213,7 +213,7 @@ def answer_candidate(nova: Nova, question: str, org_name: str, ctx: list[Doc]) -
 
 def answer(nova: Nova, interview: Doc, round: Doc, candidate: Doc, text: str, ctx: list[Doc] | None = None,
            org_name: str = "the company") -> tuple[list[Doc], bool]:
-    last = next((t for t in reversed(interview["turns"]) if t["role"] == "interviewer"), None)
+    last = next((t for t in reversed(interview["turns"]) if t["role"] == "interviewer" and t["kind"] != "handover"), None)
     if not last or interview["status"] == "completed":
         return [], True
     q = last["questionIndex"]
@@ -222,7 +222,12 @@ def answer(nova: Nova, interview: Doc, round: Doc, candidate: Doc, text: str, ct
     plan_ = interview.get("plan") or round["questions"]
     first = candidate["name"].split()[0]
     goodbye = f"Thank you, {first}. That's the end of the interview. The team will review it and get back to you by email."
-    if last["kind"] == "question":
+    team = interview.get("teamQuestions") or []
+    if team and not asking:
+        # A question someone from the team typed while watching: asked next, in the AI's voice.
+        asked = team.pop(0)
+        nxt = [turn("interviewer", "team_question", asked["text"], q)]
+    elif last["kind"] == "question":
         nxt = [turn("interviewer", "follow_up", follow_up(nova, last["text"], text, round, ctx), q)]
     elif asking:
         reply = "" if NO_QUESTIONS.match(text) else answer_candidate(nova, text, org_name, ctx or []) + " "
@@ -313,7 +318,7 @@ def score(nova: Nova, interview: Doc, round: Doc, job: Doc, ctx: list[Doc] | Non
     # The candidate's own questions at the end aren't part of the assessment.
     transcript = "\n".join(
         f"{'Interviewer' if t['role'] == 'interviewer' else 'Candidate'}: {t['text']}" for t in interview["turns"]
-        if t["kind"] not in ("invite_questions", "candidate_question", "closing")
+        if t["kind"] not in ("invite_questions", "candidate_question", "closing", "handover")
     )
     rubric = "\n".join(f"- {c['name']}: {c['description']}" for c in round["criteria"])
     result = nova.json(

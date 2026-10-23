@@ -34,6 +34,7 @@ const PATHS: Record<string, string> = {
   mail: 'M3 5h18v14H3zM3 6l9 7 9-7',
   photo: 'M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.5 9.5h.01',
   pause: 'M7 4h4v16H7zM13 4h4v16h-4z',
+  eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
 };
 
 export function Icon({ name, size = 18, className }: { name: keyof typeof PATHS | string; size?: number; className?: string }) {

@@ -5,6 +5,7 @@ import type { InterviewStep } from '../api/types';
 import { Icon } from '../components/Icon';
 import { Loading, possessive, useLoad } from '../lib/util';
 import { canListen, listen, speak, stopSpeaking } from '../lib/speech';
+import { useLive } from '../lib/live';
 
 // How Intervwd would run on an Echo Show with Alexa+: hands-free, camera on, voice only.
 // "Alexa, start my interview" → identity check on the Echo's camera → questions by voice, answers
@@ -42,13 +43,16 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
   const lastChange = useRef(0);
   const answerRef = useRef('');
   const typedDone = useRef<(text: string) => void>();
+  const live = useLive(id, phase === 'interview');
+  const takenRef = useRef<string | null>(null);
+  takenRef.current = live.takenOverBy;
   const [typed, setTyped] = useState('');
-  const live = useRef(true);
+  const live_ = useRef(true);
 
   useEffect(() => {
     navigator.mediaDevices?.getUserMedia({ video: { width: 640, height: 480 }, audio: true }).then(setStream).catch(() => setSub('Allow the camera and microphone to start.'));
     return () => {
-      live.current = false;
+      live_.current = false;
       listener.current?.stop();
       stopSpeaking();
     };
@@ -63,7 +67,7 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
     setState('speaking');
     setLine(caption ?? text);
     await speak(text);
-    if (live.current) setState('idle');
+    if (live_.current) setState('idle');
   }, []);
 
   /** Listens until the speaker pauses, then resolves with what they said. */
@@ -86,6 +90,13 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
       lastChange.current = Date.now();
     }, (m) => setSub(m));
     const timer = setInterval(() => {
+      if (takenRef.current) {  // a person from the team has taken over: the AI waits
+        clearInterval(timer);
+        listener.current?.stop();
+        setState('idle');
+        resolve('');
+        return;
+      }
       if (answerRef.current.trim() && Date.now() - lastChange.current > SILENCE_MS) {
         clearInterval(timer);
         listener.current?.stop();
@@ -144,7 +155,7 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
     setState('thinking');
     let step = await api.startInterview(id);
     for (;;) {
-      if (!live.current) return;
+      if (!live_.current) return;
       setProgress(step.progress);
       for (const t of step.turns) await say(t.text);
       if (step.done) {
@@ -156,6 +167,13 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
       }
       const ans = await hear();
       setSub('');
+      if (!ans && takenRef.current) {
+        while (takenRef.current && live_.current) await new Promise((r) => setTimeout(r, 1000));
+        const latest = (await api.room(id)).interview.turns.filter((t) => t.role === 'interviewer').pop();
+        if (latest?.kind === 'handover') await say(latest.text);
+        step = { turns: [], done: false, progress: step.progress };
+        continue;
+      }
       step = await api.answer(id, ans);
     }
   }, [data, hear, id, identity, say]);
@@ -180,6 +198,16 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
       clearInterval(every);
     };
   }, [phase, id]);
+
+  // When someone takes over, say so (the server added the line to the transcript).
+  useEffect(() => {
+    if (!live.takenOverBy) return;
+    stopSpeaking();
+    listener.current?.stop();
+    const name = live.takenOverBy.split(' ')[0];
+    setLine(`${name} from ${data?.orgName ?? 'the team'} has joined and will take it from here.`);
+    speak(`${name} has joined and will take it from here.`);
+  }, [live.takenOverBy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // In an office room the candidate is already checked in: begin as soon as the camera is ready.
   const started = useRef(false);
@@ -212,7 +240,10 @@ export function EchoSession({ id, room, onFinished }: { id: string; room?: strin
         <div className="echo-screen">
           <div className="echo-top">
             <span><Icon name="briefcase" size={14} /> {data.orgName} · {data.job.title}</span>
-            <span>{progress && phase === 'interview' ? `Question ${progress.question} of ${progress.of}` : room ? `${room} · ${data.round.name}` : data.round.name}</span>
+            <span>
+              {live.watchers.length > 0 && <span className="badge badge-warning" style={{ marginRight: 8 }}><Icon name="eye" size={12} /> {live.watchers.map((w) => w.split(' ')[0]).join(', ')} from {data.orgName} watching</span>}
+              {progress && phase === 'interview' ? `Question ${progress.question} of ${progress.of}` : room ? `${room} · ${data.round.name}` : data.round.name}
+            </span>
           </div>
           <div className="echo-body">
             <div className="echo-text">

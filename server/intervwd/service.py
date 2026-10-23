@@ -927,7 +927,9 @@ class Service:
         iv, round, c, job, _ = self._ctx(interview_id)
         if iv["status"] != "in_progress":
             raise Problem("Start the interview first." if iv["status"] == "scheduled" else "This interview has already finished.", 409)
-        last = next((t for t in reversed(iv["turns"]) if t["role"] == "interviewer"), {})
+        if iv.get("paused"):
+            raise Problem(f"{iv['paused']['by'].split()[0]} from the team is talking with you now.", 409)
+        last = next((t for t in reversed(iv["turns"]) if t["role"] == "interviewer" and t["kind"] != "handover"), {})
         if last.get("kind") == "invite_questions":
             ctx = self.search(iv, text, ("shareable",))
         else:
@@ -943,6 +945,71 @@ class Service:
         if done and round.get("decisionMode") == "auto" and iv["triage"]["band"] == "fast_track":
             self.decide(iv["orgId"], c["id"], "advance", f"Moved on automatically. {iv['triage']['reasons'][0]}", "Intervwd (automatic)", automatic=True)
         return {"turns": turns, "done": done, "progress": engine.progress(iv, round)}
+
+    # ---------- Joining an AI interview live (watch, ask a question, take over) ----------
+    # The AI leads; a recruiter can join the same Chime call. The candidate always sees who's watching.
+
+    WATCH_SECONDS = 20
+
+    def join_live(self, interview_id: str, who: str, org_id: str | None = None) -> Doc:
+        iv = self._owned("interview", interview_id, org_id, "interview") if org_id else self._get("interview", interview_id, "interview")
+        round = self._get("round", iv["roundId"], "round")
+        if round.get("mode") == "human":
+            raise Problem("This round is already a call with a person.", 409)
+        if iv["status"] == "completed":
+            raise Problem("This interview has finished.", 409)
+        meeting, attendee = self.calls.join(iv.get("meetingId"), iv["id"], who)
+        if iv.get("meetingId") != meeting["MeetingId"]:
+            iv = self._get("interview", interview_id, "interview")
+            iv["meetingId"] = meeting["MeetingId"]
+            self.save_interview(iv)
+        c = self._get("candidate", iv["candidateId"], "candidate")
+        return {"meeting": meeting, "attendee": attendee, "candidateName": c["name"], "candidateId": c["id"],
+                "jobTitle": self._get("job", iv["jobId"], "job")["title"], "roundName": round["name"], "orgName": self.org(iv["orgId"])["name"]}
+
+    def _watchers(self, iv: Doc) -> list[str]:
+        now = datetime.now(timezone.utc).timestamp()
+        return [name for name, seen in (iv.get("watchers") or {}).items() if now - seen < self.WATCH_SECONDS]
+
+    def live_status(self, interview_id: str) -> Doc:
+        """What the candidate's screen shows: who is watching, and whether a person has taken over."""
+        iv = self._get("interview", interview_id, "interview")
+        return {"watchers": self._watchers(iv), "takenOverBy": (iv.get("paused") or {}).get("by"), "status": iv["status"]}
+
+    def live_state(self, org_id: str, interview_id: str, by: str) -> Doc:
+        """The recruiter's view, polled while watching: transcript, progress, and a heartbeat."""
+        iv = self._owned("interview", interview_id, org_id, "interview")
+        iv.setdefault("watchers", {})[by] = datetime.now(timezone.utc).timestamp()
+        self.save_interview(iv)
+        round = self._get("round", iv["roundId"], "round")
+        return {"status": iv["status"], "turns": iv["turns"], "progress": engine.progress(iv, round), "takenOverBy": (iv.get("paused") or {}).get("by"),
+                "pendingQuestions": [q["text"] for q in iv.get("teamQuestions", [])], "watchers": self._watchers(iv)}
+
+    def live_control(self, org_id: str, interview_id: str, action: str, by: str, question: str = "") -> Doc:
+        iv = self._owned("interview", interview_id, org_id, "interview")
+        if iv["status"] == "completed":
+            raise Problem("This interview has finished.", 409)
+        org = self.org(org_id)
+        first = by.split()[0]
+        if action == "ask":
+            if len(question.strip()) < 5:
+                raise Problem("Type the question for the AI to ask.")
+            iv.setdefault("teamQuestions", []).append({"text": question.strip()[:400], "by": by})
+        elif action == "take_over":
+            iv["paused"] = {"by": by, "at": engine.now()}
+            iv["turns"].append(engine.turn("interviewer", "handover", f"{first} from {org['name']} has joined and will take it from here.",
+                                           iv["turns"][-1]["questionIndex"] if iv["turns"] else 0))
+        elif action == "hand_back":
+            if not iv.get("paused"):
+                raise Problem("The AI is already leading.", 409)
+            iv.pop("paused", None)
+            last_q = next((t for t in reversed(iv["turns"]) if t["role"] == "interviewer" and t["kind"] in ("question", "follow_up", "team_question")), None)
+            text = f"Thanks, {first}. Let's carry on." + (f" {last_q['text']}" if last_q else "")
+            iv["turns"].append(engine.turn("interviewer", "handover", text, last_q["questionIndex"] if last_q else 0))
+        else:
+            raise Problem("Choose ask, take over or hand back.")
+        self.save_interview(iv)
+        return self.live_state(org_id, interview_id, by)
 
     def join_call(self, interview_id: str, who: str, org_id: str | None = None) -> Doc:
         """A seat in the interview's video call: the candidate (by their link) or a recruiter (signed in)."""

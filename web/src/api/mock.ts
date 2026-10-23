@@ -492,6 +492,26 @@ export class MockApi implements Api {
       question: this.practiceAt < 2 ? 'Describe a time you disagreed with a teammate.' : null, index: this.practiceAt + 1, of: 2 };
   }
 
+  async joinLive(): Promise<import('./types').CallJoin> {
+    throw new ApiError('Watching live needs the live server (Amazon Chime SDK).', 409);
+  }
+
+  async liveStatus() {
+    return { watchers: [], takenOverBy: null, status: 'in_progress' };
+  }
+
+  async liveHost(): Promise<import('./types').CallJoin> {
+    throw new ApiError('Watching live needs the live server (Amazon Chime SDK).', 409);
+  }
+
+  async liveState(): Promise<import('./types').LiveView> {
+    throw new ApiError('Watching live needs the live server.', 409);
+  }
+
+  async liveControl(): Promise<import('./types').LiveView> {
+    throw new ApiError('Watching live needs the live server.', 409);
+  }
+
   async joinCall(): Promise<import('./types').CallJoin> {
     throw new ApiError('Video calls need the live server (Amazon Chime SDK).', 409);
   }

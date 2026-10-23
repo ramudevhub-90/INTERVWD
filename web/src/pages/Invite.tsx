@@ -220,7 +220,7 @@ export function Invite() {
           )}
           <label className="row small" style={{ alignItems: 'flex-start', margin: '6px 0 14px', cursor: 'pointer' }}>
             <input type="checkbox" checked={form.consent} onChange={(e) => { setForm({ ...form, consent: e.target.checked }); clear('consent'); }} />
-            <span className="muted">I agree that the interview is recorded and transcribed, and that a few camera snapshots are taken. {possessive(data.orgName)} recruiters review them. An AI scores answers, and a person makes every decision.</span>
+            <span className="muted">I agree that the interview is recorded and transcribed, and that a few camera snapshots are taken. {possessive(data.orgName)} recruiters review them, and may join live to watch or ask a question (you'll always see when they do). An AI scores answers, and a person makes every decision.</span>
           </label>
           {field('consent')}
 

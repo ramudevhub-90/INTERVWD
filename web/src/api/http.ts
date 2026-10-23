@@ -207,6 +207,26 @@ export class HttpApi implements Api {
     return call<{ feedback: { strength: string; improve: string; tip: string }; question: string | null; index: number; of: number }>('POST', `/practice/${encodeURIComponent(interviewId)}/answer`, { text });
   }
 
+  joinLive(interviewId: string) {
+    return call<import('./types').CallJoin>('POST', `/interviews/${encodeURIComponent(interviewId)}/live`);
+  }
+
+  liveStatus(interviewId: string) {
+    return call<{ watchers: string[]; takenOverBy: string | null; status: string }>('GET', `/interviews/${encodeURIComponent(interviewId)}/live/status`);
+  }
+
+  liveHost(interviewId: string) {
+    return call<import('./types').CallJoin>('POST', `/interviews/${encodeURIComponent(interviewId)}/live/host`);
+  }
+
+  liveState(interviewId: string) {
+    return call<import('./types').LiveView>('GET', `/interviews/${encodeURIComponent(interviewId)}/live/state`);
+  }
+
+  liveControl(interviewId: string, action: 'ask' | 'take_over' | 'hand_back', question = '') {
+    return call<import('./types').LiveView>('POST', `/interviews/${encodeURIComponent(interviewId)}/live/control`, { action, question });
+  }
+
   joinCall(interviewId: string) {
     return call<import('./types').CallJoin>('POST', `/interviews/${encodeURIComponent(interviewId)}/call`);
   }

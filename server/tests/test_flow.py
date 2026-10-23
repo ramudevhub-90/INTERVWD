@@ -579,3 +579,119 @@ def test_practice_questions_must_not_resemble_the_real_ones():
     assert too_close("How would you keep a payment API from charging twice when clients retry?", real)
     assert too_close("During a flash sale traffic spikes ten times. What breaks first?", real)
     assert not too_close("Tell me about a time you had to learn a new technology quickly for a project.", real)
+
+
+def test_recruiter_joins_an_ai_interview_live(env):
+    client, _ = env
+    h = demo_login(client)
+    svc = client.app.state.svc
+    iv = "iv_demo_vikram"
+    client.post("/api/candidates/cand_vikram/identity/approve", headers=h)
+    client.post(f"/api/interviews/{iv}/start")
+    cand = client.post(f"/api/interviews/{iv}/live").json()
+    host = client.post(f"/api/interviews/{iv}/live/host", headers=h).json()
+    assert cand["meeting"]["MeetingId"] == host["meeting"]["MeetingId"]
+    assert client.get(f"/api/interviews/{iv}/live/status").json()["watchers"] == []
+    state = client.get(f"/api/interviews/{iv}/live/state", headers=h).json()
+    assert state["status"] == "in_progress"
+    assert client.get(f"/api/interviews/{iv}/live/status").json()["watchers"] == ["Priya Sharma"]  # the candidate sees who's watching
+
+    # "Ask this next": the AI asks the team's question after the current answer.
+    client.post(f"/api/interviews/{iv}/live/control", headers=h, json={"action": "ask", "question": "How do you document an incident afterwards?"})
+    out = client.post(f"/api/interviews/{iv}/answer", json={"text": "I built and ran an orders API in Django with Celery workers and owned its on-call."}).json()
+    assert out["turns"][0]["kind"] == "team_question" and "document an incident" in out["turns"][0]["text"]
+
+    # Take over: the AI pauses; hand back: it carries on.
+    client.post(f"/api/interviews/{iv}/live/control", headers=h, json={"action": "take_over"})
+    assert client.get(f"/api/interviews/{iv}/live/status").json()["takenOverBy"] == "Priya Sharma"
+    assert client.post(f"/api/interviews/{iv}/answer", json={"text": "anything"}).status_code == 409
+    back = client.post(f"/api/interviews/{iv}/live/control", headers=h, json={"action": "hand_back"}).json()
+    assert back["takenOverBy"] is None and back["turns"][-1]["kind"] == "handover"
+    out = client.post(f"/api/interviews/{iv}/answer", json={"text": "I write a timeline, the root cause and the follow-up actions in a shared doc."}).json()
+    assert out["turns"][0]["kind"] in ("question", "follow_up")
+    assert client.post(f"/api/interviews/{iv}/live/host").status_code == 401  # watching needs a recruiter
+
+
+def test_every_mix_of_ai_and_person_rounds(env):
+    """AI -> person -> AI (a person joins midway, takes over, hands back) -> person; and person -> AI."""
+    client, outbox = env
+    h = demo_login(client)
+    svc = client.app.state.svc
+    crit = [{"name": "Craft", "description": "Quality of work"}, {"name": "Teamwork", "description": "Works well with others"}]
+
+    def make_job(title, modes):
+        job = client.post("/api/jobs", headers=h, json={"title": title, "location": "", "description": f"{title} role for our team, end to end."}).json()["id"]
+        rounds = []
+        for i, mode in enumerate(modes):
+            body = {"name": f"{mode.upper()} round {i + 1}", "mode": mode, "criteria": crit, "questions": ["Tell me about your work.", "What would you improve?"],
+                    "identityCheck": False, "requireApproval": False}
+            if mode == "human":
+                body["interviewers"] = [{"name": "Dana Lee", "email": "dana@northwind.test"}]
+            rounds.append(client.post(f"/api/jobs/{job}/rounds", headers=h, json=body).json())
+        return job, rounds
+
+    def run_ai(iv, take_over_midway=False):
+        client.post(f"/api/interviews/{iv}/start")
+        for n in range(8):
+            if take_over_midway and n == 1:
+                client.post(f"/api/interviews/{iv}/live/control", headers=h, json={"action": "take_over"})
+                assert client.post(f"/api/interviews/{iv}/answer", json={"text": "hello"}).status_code == 409  # the AI is paused
+                client.post(f"/api/interviews/{iv}/live/control", headers=h, json={"action": "hand_back"})
+            out = client.post(f"/api/interviews/{iv}/answer", json={"text": "I plan the work, check it with users and iterate with my team every week."}).json()
+            if out["done"]:
+                return
+        raise AssertionError("AI interview did not finish")
+
+    def run_human(iv, score):
+        rnd = svc.store.get("round", svc.store.get("interview", iv)["roundId"])
+        assert client.post(f"/api/interviews/{iv}/start").status_code == 409  # person-run: no AI room
+        assert client.post(f"/api/interviews/{iv}/call/host", headers=h).status_code == 200  # Chime call
+        client.post(f"/api/interviews/{iv}/scorecard", headers=h, json={
+            "criteria": [{"criterionId": c["id"], "score": score, "notes": "ok"} for c in rnd["criteria"]], "summary": "Solid interview overall."})
+
+    def advance(cid):
+        assert client.post(f"/api/candidates/{cid}/decision", headers=h, json={"action": "advance", "note": ""}).status_code == 200
+
+    def next_link():
+        mail = [m for m in outbox.sent if "you're through" in m[1]][-1][2]
+        return mail.split("filled in): ")[1].split()[0]
+
+    def book_next(rnd, link):
+        open_slot(client, h, rnd["id"])
+        token = link.split("t=")[1]
+        path = rnd["publicPath"].replace("/", "~")
+        slot = client.get(f"/api/invites/{path}?t={token}").json()["openSlots"][-1]["id"]
+        r = client.post(f"/api/invites/{path}/join", data={"name": "Kiran Rao", "email": "kiran@example.com", "slotId": slot, "consent": "true", "t": token})
+        assert r.status_code == 200, r.text
+        return r.json()["interviewId"]
+
+    # Job A: AI -> person -> AI (with a takeover) -> person
+    _, rounds = make_job("Designer", ["ai", "human", "ai", "human"])
+    iv = book(client, rounds[0]["publicPath"].replace("/", "~"), open_slot(client, h, rounds[0]["id"]), photo=False).json()["interviewId"]
+    cid = svc.store.get("interview", iv)["candidateId"]
+    run_ai(iv)
+    advance(cid)
+    iv = book_next(rounds[1], next_link())
+    run_human(iv, 4)
+    advance(cid)
+    iv = book_next(rounds[2], next_link())
+    run_ai(iv, take_over_midway=True)
+    assert any(t["kind"] == "handover" for t in svc.store.get("interview", iv)["turns"])
+    advance(cid)
+    iv = book_next(rounds[3], next_link())
+    run_human(iv, 5)
+    advance(cid)  # last round: a final yes
+    view = client.get(f"/api/candidates/{cid}", headers=h).json()
+    assert len(view["interviews"]) == 4 and all(i["status"] == "completed" for i in view["interviews"])
+    assert [i["report"]["scoredBy"] for i in view["interviews"]] == ["rules", "human", "rules", "human"]
+    assert view["candidate"]["status"] == "advanced" and len(view["decisions"]) == 4
+
+    # Job B: person -> AI
+    _, rounds = make_job("Recruiter", ["human", "ai"])
+    iv = book(client, rounds[0]["publicPath"].replace("/", "~"), open_slot(client, h, rounds[0]["id"]), photo=False).json()["interviewId"]
+    cid = svc.store.get("interview", iv)["candidateId"]
+    run_human(iv, 4)
+    advance(cid)
+    iv = book_next(rounds[1], next_link())
+    run_ai(iv)
+    assert client.get(f"/api/candidates/{cid}", headers=h).json()["candidate"]["status"] == "completed"

@@ -37,6 +37,7 @@ export function Dashboard() {
             <Link key={r.interviewId} className="list-row" to={`/app/candidates/${r.candidateId}`}>
               <Icon name="clock" />
               <div className="grow"><div style={{ fontWeight: 500 }}>{r.name}</div><div className="faint">{when(r.slotStart)}{r.room ? ` · ${r.room}` : ''}</div></div>
+              {(r.state === 'in_room' || r.state === 'arrived') && <Link className="btn btn-sm" to={`/app/live/${r.interviewId}`} onClick={(e) => e.stopPropagation()}><Icon name="eye" size={14} /> Watch</Link>}
               <span className={`badge ${r.state === 'done' ? 'badge-success' : r.state === 'in_room' ? 'badge-accent' : r.state === 'no_show' ? 'badge-danger' : r.state === 'arrived' ? 'badge-warning' : ''}`}>
                 {{ expected: 'Expected', arrived: 'At reception', in_room: 'Interviewing', done: 'Done', no_show: 'No-show' }[r.state]}
               </span>
@@ -86,14 +87,16 @@ export function Dashboard() {
           <div className="card">
             <div className="card-head"><h2>Coming up</h2></div>
             {data.upcoming.length === 0 && <p className="empty">No interviews booked yet. Share a round's invite link to fill slots.</p>}
-            {data.upcoming.map(({ interview, candidate, job }) => (
+            {data.upcoming.map(({ interview, candidate, job, round }) => (
               <div key={interview.id} className="list-row">
                 <Icon name="clock" />
                 <div className="grow">
                   <div style={{ fontWeight: 500 }}>{candidate.name}</div>
-                  <div className="faint ellipsis">{job.title}</div>
+                  <div className="faint ellipsis">{job.title} · {round.mode === 'human' ? 'with a person' : 'AI'}</div>
                 </div>
-                <span className="small muted">{when(interview.slotStart)}</span>
+                {interview.status === 'in_progress' && round.mode !== 'human'
+                  ? <Link className="btn btn-sm btn-primary" to={`/app/live/${interview.id}`}><Icon name="eye" size={14} /> Live now · watch</Link>
+                  : <span className="small muted">{when(interview.slotStart)}</span>}
               </div>
             ))}
           </div>

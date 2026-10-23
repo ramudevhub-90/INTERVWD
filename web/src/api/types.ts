@@ -91,7 +91,7 @@ export interface Candidate {
   createdAt: string;
 }
 
-export type TurnKind = 'greeting' | 'question' | 'follow_up' | 'answer' | 'invite_questions' | 'candidate_question' | 'closing';
+export type TurnKind = 'greeting' | 'question' | 'follow_up' | 'team_question' | 'handover' | 'answer' | 'invite_questions' | 'candidate_question' | 'closing';
 
 export interface Turn {
   role: 'interviewer' | 'candidate';
@@ -363,4 +363,14 @@ export interface CallJoin {
   roundName: string;
   orgName: string;
   interviewers: string[];
+}
+
+/** The recruiter's live view of an AI interview. */
+export interface LiveView {
+  status: Interview['status'];
+  turns: Turn[];
+  progress: { question: number; of: number };
+  takenOverBy: string | null;
+  pendingQuestions: string[];
+  watchers: string[];
 }

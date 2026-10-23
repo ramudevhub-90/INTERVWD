@@ -80,6 +80,7 @@ function InterviewReport({ interview, round, onChange }: { interview: Interview;
       <div className="card">
         <div className="card-head"><h2>{round?.name}</h2><span className="badge">{interview.status === 'in_progress' ? 'In progress' : 'Booked'}</span></div>
         <p className="muted">{interview.status === 'in_progress' ? 'The interview is happening now. The report appears as soon as it ends.' : `Booked for ${when(interview.slotStart)}. The report appears here after the interview.`}</p>
+        {interview.status !== 'completed' && <Link className="btn btn-primary btn-sm" style={{ marginTop: 10 }} to={`/app/live/${interview.id}`}><Icon name="eye" size={15} /> Watch live and step in</Link>}
       </div>
     );
   }

@@ -17,15 +17,18 @@ export interface CallSeat {
   attendee: unknown;
 }
 
-export function VideoCall({ seat, otherName, onLeave }: { seat: CallSeat; otherName: string; onLeave?: () => void }) {
+/** `listenOnly` joins with the microphone muted and the camera off (watching an AI interview). */
+export function VideoCall({ seat, otherName, onLeave, listenOnly, unmuteSignal }: {
+  seat: CallSeat; otherName: string; onLeave?: () => void; listenOnly?: boolean; unmuteSignal?: boolean;
+}) {
   const local = useRef<HTMLVideoElement>(null);
   const remote = useRef<HTMLVideoElement>(null);
   const audio = useRef<HTMLAudioElement>(null);
   const session = useRef<MeetingSession>();
   const [status, setStatus] = useState<'connecting' | 'waiting' | 'live' | 'ended' | 'error'>('connecting');
   const [error, setError] = useState<string>();
-  const [muted, setMuted] = useState(false);
-  const [cameraOn, setCameraOn] = useState(true);
+  const [muted, setMuted] = useState(!!listenOnly);
+  const [cameraOn, setCameraOn] = useState(!listenOnly);
   const [remoteVideo, setRemoteVideo] = useState(false);
 
   useEffect(() => {
@@ -62,7 +65,8 @@ export function VideoCall({ seat, otherName, onLeave }: { seat: CallSeat; otherN
         if (cams[0]) await av.startVideoInput(cams[0].deviceId);
         if (audio.current) await av.bindAudioElement(audio.current);
         av.start();
-        if (cams[0]) av.startLocalVideoTile();
+        if (listenOnly) av.realtimeMuteLocalAudio();
+        else if (cams[0]) av.startLocalVideoTile();
         if (!stopped) setStatus((st) => (st === 'connecting' ? 'waiting' : st));
       } catch (e) {
         setError((e as Error).message || 'Allow the camera and microphone to join the call.');
@@ -79,6 +83,23 @@ export function VideoCall({ seat, otherName, onLeave }: { seat: CallSeat; otherN
       av.stopAudioInput().catch(() => undefined);
     };
   }, [seat]);
+
+  // Taking over an AI interview turns the microphone and camera on; handing back mutes again.
+  useEffect(() => {
+    const av = session.current?.audioVideo;
+    if (!av || unmuteSignal === undefined) return;
+    if (unmuteSignal) {
+      av.realtimeUnmuteLocalAudio();
+      av.startLocalVideoTile();
+      setMuted(false);
+      setCameraOn(true);
+    } else {
+      av.realtimeMuteLocalAudio();
+      av.stopLocalVideoTile();
+      setMuted(true);
+      setCameraOn(false);
+    }
+  }, [unmuteSignal]);
 
   const toggleMute = () => {
     const av = session.current?.audioVideo;

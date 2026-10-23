@@ -342,6 +342,27 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
         data, kind = svc.face_image(c["orgId"], c["id"], request.path_params["which"])
         return Response(data, media_type=kind, headers={"Cache-Control": "private, no-store"})
 
+    @route("/api/interviews/{interview_id}/live", ["POST"])
+    async def live_candidate(request: Request) -> Doc:
+        return svc.join_live(request.path_params["interview_id"], "candidate")
+
+    @route("/api/interviews/{interview_id}/live/status", ["GET"])
+    async def live_status(request: Request) -> Doc:
+        return svc.live_status(request.path_params["interview_id"])
+
+    @route("/api/interviews/{interview_id}/live/host", ["POST"], recruiter=True)
+    async def live_host(request: Request, s: Doc) -> Doc:
+        return svc.join_live(request.path_params["interview_id"], f"watch-{s['userId']}"[:64], s["orgId"])
+
+    @route("/api/interviews/{interview_id}/live/state", ["GET"], recruiter=True)
+    async def live_state(request: Request, s: Doc) -> Doc:
+        return svc.live_state(s["orgId"], request.path_params["interview_id"], s["name"])
+
+    @route("/api/interviews/{interview_id}/live/control", ["POST"], recruiter=True)
+    async def live_control(request: Request, s: Doc) -> Doc:
+        d = await body(request)
+        return svc.live_control(s["orgId"], request.path_params["interview_id"], str(d.get("action", "")), s["name"], str(d.get("question", "")))
+
     @route("/api/interviews/{interview_id}/call", ["POST"])
     async def call_candidate(request: Request) -> Doc:
         return svc.join_call(request.path_params["interview_id"], "candidate")
