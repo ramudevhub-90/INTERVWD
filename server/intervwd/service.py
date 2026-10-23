@@ -960,7 +960,7 @@ class Service:
     def _live(self, interview_id: str) -> Doc:
         """Call and supervision state for an interview, kept apart from the transcript: answers and the
         watchers' heartbeats are written at the same time, and must never overwrite each other."""
-        return self.store.get("live", interview_id) or {"meetingId": None, "watchers": {}, "paused": None, "teamQuestions": []}
+        return self.store.get("live", interview_id) or {"meetingId": None, "paused": None, "teamQuestions": []}
 
     def _save_live(self, interview_id: str, doc: Doc) -> None:
         self.store.put("live", interview_id, doc)
@@ -989,25 +989,29 @@ class Service:
         return {"meeting": meeting, "attendee": attendee, "candidateName": c["name"], "candidateId": c["id"],
                 "jobTitle": self._get("job", iv["jobId"], "job")["title"], "roundName": round["name"], "orgName": self.org(iv["orgId"])["name"]}
 
-    def _watchers(self, live: Doc) -> list[str]:
-        now = datetime.now(timezone.utc).timestamp()
-        return [name for name, seen in (live.get("watchers") or {}).items() if now - seen < self.WATCH_SECONDS]
+    def _watchers(self, interview_id: str) -> list[str]:
+        """Heartbeats live in their own small documents (one per watcher), so they never overwrite the
+        pause or the queued questions."""
+        return [w["name"] for w in self.store.listed(f"watchers#{interview_id}")]
+
+    def _heartbeat(self, interview_id: str, name: str) -> None:
+        self.store.put("watcher", f"{interview_id}#{name}", {"name": name}, index=(f"watchers#{interview_id}", name),
+                       expires=int(datetime.now(timezone.utc).timestamp()) + self.WATCH_SECONDS)
 
     def live_status(self, interview_id: str) -> Doc:
         """What the candidate's screen shows: who is watching, and whether a person has taken over."""
         iv = self._get("interview", interview_id, "interview")
         live = self._live(interview_id)
-        return {"watchers": self._watchers(live), "takenOverBy": (live.get("paused") or {}).get("by"), "status": iv["status"]}
+        return {"watchers": self._watchers(interview_id), "takenOverBy": (live.get("paused") or {}).get("by"), "status": iv["status"]}
 
     def live_state(self, org_id: str, interview_id: str, by: str) -> Doc:
         """The recruiter's view, polled while watching: transcript, progress, and a heartbeat."""
         iv = self._owned("interview", interview_id, org_id, "interview")
-        live = self._live(interview_id)
-        live.setdefault("watchers", {})[by] = datetime.now(timezone.utc).timestamp()
-        self._save_live(interview_id, live)
+        self._heartbeat(interview_id, by)
+        live = self._live(interview_id)  # read only: heartbeats never write the live document
         round = self._get("round", iv["roundId"], "round")
         return {"status": iv["status"], "turns": iv["turns"], "progress": engine.progress(iv, round), "takenOverBy": (live.get("paused") or {}).get("by"),
-                "pendingQuestions": [q["text"] for q in live.get("teamQuestions", [])], "watchers": self._watchers(live)}
+                "pendingQuestions": [q["text"] for q in live.get("teamQuestions", [])], "watchers": self._watchers(interview_id)}
 
     def live_control(self, org_id: str, interview_id: str, action: str, by: str, question: str = "") -> Doc:
         iv = self._owned("interview", interview_id, org_id, "interview")
@@ -1024,6 +1028,8 @@ class Service:
         elif action in ("take_over", "hand_back"):
             if action == "hand_back" and not live.get("paused"):
                 raise Problem("The AI is already leading.", 409)
+            if action == "take_over" and live.get("paused"):
+                return self.live_state(org_id, interview_id, by)  # already taken over (a double click)
             live["paused"] = {"by": by, "at": engine.now()} if action == "take_over" else None
             self._save_live(interview_id, live)  # answers are refused from here on, so the transcript is safe to update
             iv = self._get("interview", interview_id, "interview")

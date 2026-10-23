@@ -712,3 +712,27 @@ def test_watching_never_overwrites_answers(env):
     turns = svc.store.get("interview", iv)["turns"]
     assert sum(1 for t in turns if t["kind"] == "answer") == 3
     assert client.post(f"/api/interviews/{iv}/live/host", headers=h).json()["meeting"]["MeetingId"] == seat["meeting"]["MeetingId"]
+
+
+def test_heartbeats_never_undo_takeover_or_drop_questions(env):
+    """A watcher's heartbeat between every action must not undo a hand-back or wipe a queued question."""
+    client, _ = env
+    h = demo_login(client)
+    iv = "iv_demo_vikram"
+    client.post("/api/candidates/cand_vikram/identity/approve", headers=h)
+    client.post(f"/api/interviews/{iv}/start")
+    beat = lambda: client.get(f"/api/interviews/{iv}/live/state", headers=h).json()  # noqa: E731
+    ctl = lambda a, q="": client.post(f"/api/interviews/{iv}/live/control", headers=h, json={"action": a, "question": q}).json()  # noqa: E731
+    beat()
+    ctl("ask", "How do you handle an angry customer on the phone?")
+    assert beat()["pendingQuestions"] == ["How do you handle an angry customer on the phone?"]
+    ctl("take_over")
+    ctl("take_over")  # double click: no second handover line
+    beat()
+    ctl("hand_back")
+    state = beat()
+    assert state["takenOverBy"] is None and state["pendingQuestions"] == ["How do you handle an angry customer on the phone?"]
+    assert sum(1 for t in state["turns"] if t["kind"] == "handover") == 2  # joined once, handed back once
+    out = client.post(f"/api/interviews/{iv}/answer", json={"text": "I built and ran an orders API in Django and owned its on-call."}).json()
+    assert out["turns"][0]["kind"] == "team_question"
+    assert beat()["pendingQuestions"] == []
