@@ -6,13 +6,13 @@ import type { Round } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PageHead } from '../components/Shell';
 import { KnowledgeTab } from './KnowledgeTab';
-import { Loading, ScoreBadge, StatusBadge, copy, initials, inviteUrl, useLoad, when } from '../lib/util';
+import { Loading, ScoreBadge, StatusBadge, copy, initials, invitePath, inviteUrl, useLoad, when } from '../lib/util';
 
 function RoundCard({ round, onChange }: { round: Round; onChange: (r: Round) => void }) {
   const [start, setStart] = useState('');
   const [error, setError] = useState<string>();
   const [copied, setCopied] = useState(false);
-  const url = inviteUrl(round.inviteCode);
+  const url = inviteUrl(round);
 
   const add = async () => {
     if (!start) return setError('Pick a date and time first.');
@@ -78,7 +78,7 @@ function RoundCard({ round, onChange }: { round: Round; onChange: (r: Round) => 
               <a className="btn btn-sm" href={`mailto:?subject=${encodeURIComponent('Interview invitation')}&body=${encodeURIComponent(`Create your profile and pick a time for your interview here: ${url}`)}`}>Share by email</a>
             </div>
             <p className="faint" style={{ marginTop: 6 }}>
-              Applicants create a profile{round.identityCheck ? ' with a face photo' : ''}, upload a CV and book a slot{round.requireApproval ? '; you approve profiles before they get the interview link' : ''}. <Link to={`/i/${round.inviteCode}`} target="_blank">Preview as a candidate</Link>
+              Applicants create a profile{round.identityCheck ? ' with a face photo' : ''}, upload a CV and book a slot{round.requireApproval ? '; you approve profiles before they get the interview link' : ''}. <Link to={invitePath(round)} target="_blank">Preview as a candidate</Link>
             </p>
           </div>
           <div>

@@ -94,8 +94,9 @@ class Mailer:
 
 
 class Auth:
-    def __init__(self, store: Store, mailer: Mailer, demo_code: str | None = None) -> None:
+    def __init__(self, store: Store, mailer: Mailer, demo_code: str | None = None, slugs: Any = None) -> None:
         self.store = store
+        self.slugs = slugs  # Service.claim_slug: gives each company a unique name for its links
         self.mailer = mailer
         self.demo_code = demo_code if demo_code is not None else os.environ.get("DEMO_CODE") or None
 
@@ -121,6 +122,8 @@ class Auth:
             raise Problem("That email already has a company account. Sign in instead.", 409)
         # Unverified sign-ups can be replaced, so nobody can squat someone else's email.
         org = {"id": new_id("org"), "name": org_name.strip()[:120], "createdAt": _iso()}
+        if self.slugs:
+            org["slug"] = self.slugs(org["id"], org["name"])
         self.store.put("org", org["id"], org)
         self.store.put("recruiter", email, {"email": email, "name": name.strip()[:120], "orgId": org["id"], "verified": False})
         return self._send_code(email, "set up a company on Intervwd")

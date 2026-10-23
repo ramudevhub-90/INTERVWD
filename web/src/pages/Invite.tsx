@@ -13,7 +13,9 @@ const MAX_PHOTO = 5 * 1024 * 1024;
 
 /** The candidate's profile: through the round's invite link, or the personal link HR sent (?t=…). */
 export function Invite() {
-  const { code = '' } = useParams();
+  // /i/<code>, or the named link /<company>/<round> (sent to the server as "<company>~<round>").
+  const { code: plain, org, round: roundSlug } = useParams();
+  const code = plain ?? (org && roundSlug ? `${org}~${roundSlug}` : '');
   const [params] = useSearchParams();
   const token = params.get('t') ?? undefined;
   const { data, error } = useLoad(() => api.invite(code, token), [code, token]);

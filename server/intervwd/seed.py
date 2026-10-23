@@ -73,7 +73,8 @@ def reset_demo(svc: Service) -> None:
     s = svc.store
     _clear_extras(svc)
     tag = secrets.token_hex(2)  # fresh slot ids each time, so old bookings never block reseeded slots
-    s.put("org", DEMO_ORG, {"id": DEMO_ORG, "name": "Northwind Labs", "createdAt": _at(-24 * 30), "seededAt": now()})
+    s.put("org", DEMO_ORG, {"id": DEMO_ORG, "name": "Northwind Labs", "slug": "northwind-labs", "createdAt": _at(-24 * 30), "seededAt": now()})
+    s.put("org-slug", "northwind-labs", {"orgId": DEMO_ORG})
     s.put("recruiter", DEMO_EMAIL, {"email": DEMO_EMAIL, "name": "Priya Sharma", "orgId": DEMO_ORG, "verified": True})
 
     jobs = [
@@ -85,11 +86,15 @@ def reset_demo(svc: Service) -> None:
         svc.save_job({**j, "orgId": DEMO_ORG, "status": "open", "createdAt": _at(-24 * (20 - i * 5))})
 
     def round_(rid: str, job: str, index: int, name: str, criteria: list[Doc], questions: list[str], code: str, slots: list[tuple[str, float, str | None]]) -> Doc:
+        path = {"round_backend_1": "backend-engineer-r1", "round_backend_2": "backend-engineer-r2",
+                "round_storeops_1": "store-operations-manager-r1", "round_analyst_1": "data-analyst-r1"}[rid]
         r = {"id": rid, "jobId": job, "orgId": DEMO_ORG, "index": index, "name": name, "durationMin": 20, "criteria": criteria, "questions": questions,
              "identityCheck": rid in ("round_backend_1", "round_storeops_1"), "requireApproval": rid == "round_storeops_1",
+             "publicPath": f"northwind-labs/{path}",
              "inviteCode": code, "slots": [{"id": f"{sid}_{tag}", "start": _at(h), **({"candidateId": c} if c else {})} for sid, h, c in slots]}
         svc.save_round(r)
         s.put("invite", code, {"roundId": rid})
+        s.put("invite", f"northwind-labs~{path}", {"roundId": rid})
         return r
 
     be1 = round_("round_backend_1", "job_backend", 1, "Round 1 · Technical screen",

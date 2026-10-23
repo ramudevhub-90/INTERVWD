@@ -38,6 +38,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="candidates/:candidateId" element={<CandidateReport />} />
             <Route path="alexa" element={<AlexaSimulator />} />
           </Route>
+          <Route path="/:org/:round" element={<Invite />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>

@@ -141,7 +141,7 @@ def get_invite_link(svc: Service, s: Doc, job_title: str | None = None, round_nu
     r = next((x for x in rounds if x["index"] == round_number), rounds[0] if rounds else None)
     if not r:
         return {"say": f"{job['title']} has no interview rounds yet. Add one on the web dashboard."}
-    url = f"{svc.app_url}/i/{r['inviteCode']}"
+    url = svc.invite_url(r)
     open_slots = sum(1 for x in r["slots"] if not x.get("candidateId"))
     return {"say": f"The invite link for {job['title']}, {r['name']}, is {url}. It has {open_slots} open slots.", "url": url, "openSlots": open_slots}
 

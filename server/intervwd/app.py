@@ -98,7 +98,7 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
     mailer = mailer or Mailer()
     faces = faces or (RekognitionMatcher() if os.environ.get("ORIGIN_SECRET") else FakeMatcher())
     svc = Service(store, blobs, nova, os.environ.get("APP_URL", "https://intervwd.com"), mailer, kb or knowledge_mod.from_env(), faces)
-    auth = Auth(store, mailer, demo_code)
+    auth = Auth(store, mailer, demo_code, slugs=svc.claim_slug)
     assistant = Assistant(svc, nova)
     mcp = create_server(svc)
     signing_key = (os.environ.get("ORIGIN_SECRET") or secrets.token_hex(16)).encode()

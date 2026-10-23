@@ -91,4 +91,6 @@ export function copy(text: string) {
   return navigator.clipboard?.writeText(text).catch(() => undefined);
 }
 
-export const inviteUrl = (code: string) => `${location.origin}/i/${code}`;
+/** A round's public invite link: intervwd.com/<company>/<job>-r<round> (older rounds: /i/<code>). */
+export const invitePath = (round: { inviteCode: string; publicPath?: string }) => (round.publicPath ? `/${round.publicPath}` : `/i/${round.inviteCode}`);
+export const inviteUrl = (round: { inviteCode: string; publicPath?: string }) => `${location.origin}${invitePath(round)}`;

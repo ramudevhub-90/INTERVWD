@@ -124,7 +124,7 @@ def test_assistant_rules_need_a_yes(env):
     done = ask("yes")
     assert "Round 2" in done["text"]
     assert client.get("/api/candidates/cand_rahul", headers=h).json()["candidate"]["status"] == "advanced"
-    assert any(m[0] == "rahul.mehta@example.com" and "nw-backend-r2" in m[2] for m in outbox.sent)
+    assert any(m[0] == "rahul.mehta@example.com" and "northwind-labs/backend-engineer-r2" in m[2] for m in outbox.sent)
 
 
 def test_oauth_link_and_mcp_tools(env):
@@ -317,3 +317,22 @@ def test_briefing_only_tells_news(env):
     first = ask("Alexa, what's new?")
     assert "scored highest" in first["text"] and first["tool"] == "get_briefing"
     assert "Nothing new" in ask("Any updates?")["text"] or "Next up" in ask("Any updates?")["text"]
+
+
+def test_links_carry_the_company_name(env):
+    client, outbox = env
+    h = demo_login(client)
+    svc = client.app.state.svc
+    # The demo company's links, and the old code still works.
+    assert client.get("/api/invites/northwind-labs~backend-engineer-r1").json()["job"]["title"] == "Backend Engineer"
+    assert client.get("/api/invites/nw-backend-r1").status_code == 200
+    # Two companies with the same name get different link names.
+    for i in range(2):
+        client.post("/api/orgs", json={"orgName": "Acme Retail", "name": "Sam Lee", "email": f"sam{i}@acme.test"})
+    slugs = sorted(svc.store.get("org", svc.store.get("recruiter", f"sam{i}@acme.test")["orgId"])["slug"] for i in range(2))
+    assert slugs == ["acme-retail", "acme-retail-2"]
+    job = client.post("/api/jobs", headers=h, json={"title": "QA Engineer", "location": "", "description": "Test our payments platform end to end."}).json()["id"]
+    r = client.post(f"/api/jobs/{job}/rounds", headers=h, json={"name": "Screen", "criteria": [{"name": "Testing", "description": "x"}], "questions": ["a?", "b?"]}).json()
+    assert r["publicPath"] == "northwind-labs/qa-engineer-r1"
+    assert client.get("/api/invites/northwind-labs~qa-engineer-r1").json()["round"]["id"] == r["id"]
+    assert "northwind-labs/backend-engineer-r1" in client.post("/api/assistant", headers=h, json={"message": "share the backend invite link"}).json()["text"]

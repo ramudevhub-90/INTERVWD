@@ -50,6 +50,7 @@ export interface Round {
   questions: string[];
   inviteCode: string;
   slots: Slot[];
+  publicPath?: string; // the invite link's path: <company>/<job>-r<round>, e.g. northwind-labs/backend-engineer-r1
   identityCheck?: boolean; // face must match the profile photo before the interview starts
   requireApproval?: boolean; // HR approves sign-ups before the interview link goes out
 }
@@ -175,7 +176,7 @@ export interface JobView {
 export interface InviteView {
   orgName: string;
   job: Job;
-  round: Pick<Round, 'id' | 'name' | 'index' | 'durationMin'> & { identityCheck: boolean; requireApproval: boolean };
+  round: Pick<Round, 'id' | 'name' | 'index' | 'durationMin' | 'publicPath'> & { identityCheck: boolean; requireApproval: boolean };
   openSlots: Slot[];
   invited?: { name: string; email: string; hasCv: boolean }; // a candidate HR added, on their personal link
 }

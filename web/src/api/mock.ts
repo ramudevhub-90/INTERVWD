@@ -47,7 +47,7 @@ interface Db {
   pending?: { action: DecisionAction; candidateId: string };
 }
 
-const KEY = 'intervwd-sample-v2';
+const KEY = 'intervwd-sample-v3';
 export const DEMO_CODE = '246810';
 const id = (p: string) => `${p}_${Math.random().toString(36).slice(2, 10)}`;
 const iso = (d: Date) => d.toISOString();
@@ -73,6 +73,7 @@ function seed(): Db {
   const r = (jobId: string, index: number, name: string, criteria: Round['criteria'], questions: string[], code: string, slots: Slot[]): Round => ({
     id: `round_${jobId.slice(4)}_${index}`, jobId, orgId: org.id, index, name, durationMin: 20, criteria, questions, inviteCode: code, slots,
     identityCheck: code === 'nw-backend-r1' || code === 'nw-storeops-r1', requireApproval: code === 'nw-storeops-r1',
+    publicPath: `northwind-labs/${({ 'nw-backend-r1': 'backend-engineer-r1', 'nw-backend-r2': 'backend-engineer-r2', 'nw-storeops-r1': 'store-operations-manager-r1', 'nw-analyst-r1': 'data-analyst-r1' } as Record<string, string>)[code]}`,
   });
   const rounds: Round[] = [
     r('job_backend', 1, 'Round 1 · Technical screen',
@@ -291,10 +292,11 @@ export class MockApi implements Api {
     const job = this.find(this.db.jobs, jobId, 'job');
     const index = this.db.rounds.filter((r) => r.jobId === jobId).length + 1;
     const slug = job.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 16);
+    const named = `${(this.db.orgs.find((o) => o.id === orgId)?.name ?? 'company').toLowerCase().replace(/[^a-z0-9]+/g, '-')}/${job.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-r${index}`;
     const round: Round = {
       id: id('round'), jobId, orgId: orgId!, index, name: `Round ${index} · ${input.name.trim()}`, durationMin: input.durationMin,
       criteria: input.criteria.map((c) => ({ id: id('c'), ...c })), questions: input.questions, inviteCode: `${slug}-r${index}-${Math.random().toString(36).slice(2, 6)}`, slots: [],
-      identityCheck: input.identityCheck, requireApproval: input.requireApproval,
+      identityCheck: input.identityCheck, requireApproval: input.requireApproval, publicPath: named,
     };
     this.db.rounds.push(round);
     this.save();
@@ -384,7 +386,7 @@ export class MockApi implements Api {
     };
     this.db.candidates.push(c);
     this.save();
-    return { id: c.id, link: `${location.origin}/i/${round.inviteCode}?t=sample-${c.id}` };
+    return { id: c.id, link: `${location.origin}/${round.publicPath ?? `i/${round.inviteCode}`}?t=sample-${c.id}` };
   }
 
   async reviewSignup(candidateId: string, approve: boolean) {
@@ -474,7 +476,7 @@ export class MockApi implements Api {
     if (/\b(invite|link)\b/.test(text)) {
       const job = this.db.jobs.find((j) => j.orgId === s.orgId && text.includes(j.title.split(' ')[0].toLowerCase())) ?? this.db.jobs.find((j) => j.orgId === s.orgId);
       const round = this.db.rounds.find((r) => r.jobId === job?.id);
-      return { tool: 'get_invite_link', text: round ? `The invite link for ${job!.title}, ${round.name}, is on your screen: intervwd.com/i/${round.inviteCode}. It has ${round.slots.filter((x) => !x.candidateId).length} open slots.` : 'That job has no rounds yet.' };
+      return { tool: 'get_invite_link', text: round ? `The invite link for ${job!.title}, ${round.name}, is on your screen: intervwd.com/${round.publicPath ?? `i/${round.inviteCode}`}. It has ${round.slots.filter((x) => !x.candidateId).length} open slots.` : 'That job has no rounds yet.' };
     }
     return { text: 'I can tell you how today\'s interviews went, read a candidate\'s report, compare candidates, share an invite link, or move someone to the next round. What would you like?' };
   }
@@ -482,7 +484,7 @@ export class MockApi implements Api {
   // ---------- Candidate ----------
 
   private byCode(code: string) {
-    const round = this.db.rounds.find((r) => r.inviteCode === code);
+    const round = this.db.rounds.find((r) => r.inviteCode === code || r.publicPath === code.replace('~', '/'));
     if (!round) throw new ApiError("This invite link isn't valid. Ask the company for a new one.", 404);
     return round;
   }

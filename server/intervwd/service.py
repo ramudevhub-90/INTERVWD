@@ -5,7 +5,9 @@ Layout in the store (see store.py):
   recruiter/<email>                 {email, name, orgId}
   job/<id>        listed under      org#<orgId>#jobs
   round/<id>      listed under      job#<jobId>#rounds          (sorted by round number)
-  invite/<code>                     {roundId}
+  invite/<code>                     {roundId}; code is the round's original code, or "<orgSlug>~<roundSlug>"
+                                    for the public link intervwd.com/<orgSlug>/<roundSlug>
+  org-slug/<slug>                   {orgId}: keeps company names in links unique
   candidate/<id>  listed under      job#<jobId>#candidates
   interview/<id>  listed under      org#<orgId>#interviews      (sorted by slot time; the id is the candidate's secret link)
   decision/<id>   listed under      candidate#<id>#decisions
@@ -46,6 +48,15 @@ class Problem(Exception):
     def __init__(self, message: str, status: int = 400) -> None:
         super().__init__(message)
         self.status = status
+
+
+# First path segments the web app uses for its own pages; a company can't take these as its name.
+RESERVED_SLUGS = {"app", "i", "interview", "echo", "connect", "signin", "signup", "api", "mcp", "oauth", "health", "assets",
+                  "www", "admin", "about", "help", "support", "login", "logout", "pricing", "terms", "privacy", "favicon"}
+
+
+def slugify(text: str, limit: int = 40) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:limit].strip("-") or "company"
 
 
 def new_id(prefix: str) -> str:
@@ -93,6 +104,28 @@ class Service:
 
     def org(self, org_id: str) -> Doc:
         return self._get("org", org_id, "company")
+
+    def claim_slug(self, org_id: str, name: str) -> str:
+        """A unique, readable company name for links: northwind-labs, northwind-labs-2, ..."""
+        base = slugify(name)
+        for n in range(1, 50):
+            slug = base if n == 1 else f"{base}-{n}"
+            if slug not in RESERVED_SLUGS and self.store.create("org-slug", slug, {"orgId": org_id}):
+                return slug
+        return f"{base}-{secrets.token_hex(3)}"
+
+    def org_slug(self, org: Doc) -> str:
+        if not org.get("slug"):  # companies created before links had names
+            org["slug"] = self.claim_slug(org["id"], org["name"])
+            self.store.put("org", org["id"], org)
+        return org["slug"]
+
+    def invite_path(self, round: Doc) -> str:
+        """The public link's path, e.g. northwind-labs/backend-engineer-r1."""
+        return round.get("publicPath") or f"i/{round['inviteCode']}"
+
+    def invite_url(self, round: Doc) -> str:
+        return f"{self.app_url}/{self.invite_path(round)}"
 
     def jobs(self, org_id: str) -> list[Doc]:
         return self.store.listed(f"org#{org_id}#jobs")
@@ -212,11 +245,19 @@ class Service:
         index = len(self.rounds(job_id)) + 1
         slug = re.sub(r"[^a-z0-9]+", "-", job["title"].lower()).strip("-")[:16]
         code = f"{slug}-r{index}-{secrets.token_hex(3)}"
+        org_slug = self.org_slug(self.org(org_id))
+        round_slug = f"{slugify(job['title'], 48)}-r{index}"
+        for n in range(2, 50):  # two jobs with the same title in one company
+            if not self.store.get("invite", f"{org_slug}~{round_slug}"):
+                break
+            round_slug = f"{slugify(job['title'], 48)}-{n}-r{index}"
         round = {"id": new_id("round"), "jobId": job_id, "orgId": org_id, "index": index, "name": f"Round {index} · {name[:60]}",
                  "durationMin": int(body.get("durationMin") or 20), "criteria": criteria, "questions": questions, "inviteCode": code, "slots": [],
-                 "identityCheck": bool(body.get("identityCheck", True)), "requireApproval": bool(body.get("requireApproval", True))}
+                 "identityCheck": bool(body.get("identityCheck", True)), "requireApproval": bool(body.get("requireApproval", True)),
+                 "publicPath": f"{org_slug}/{round_slug}"}
         self.save_round(round)
         self.store.put("invite", code, {"roundId": round["id"]})
+        self.store.put("invite", f"{org_slug}~{round_slug}", {"roundId": round["id"]})
         return round
 
     def add_slots(self, org_id: str, round_id: str, starts: list[str]) -> Doc:
@@ -279,7 +320,7 @@ class Service:
             org, job = self.org(org_id), self._get("job", c["jobId"], "job")
             self._email(c["email"], f"{org['name']}: you're through to {nxt['name'].split(' · ')[0]}",
                         f"Hi {c['name'].split()[0]},\n\nGood news: {org['name']} would like you to take the next step for {job['title']}, "
-                        f"{nxt['name']}.\n\nBook a time here: {self.app_url}/i/{nxt['inviteCode']}\n\nIntervwd, on behalf of {org['name']}")
+                        f"{nxt['name']}.\n\nBook a time here: {self.invite_url(nxt)}\n\nIntervwd, on behalf of {org['name']}")
         return {"decision": d, "candidate": c, "nextRound": nxt}
 
     def next_round(self, c: Doc) -> Doc | None:
@@ -387,7 +428,7 @@ class Service:
         return {
             "orgName": self.org(round["orgId"])["name"],
             "job": self._get("job", round["jobId"], "job"),
-            "round": {k: round.get(k) for k in ("id", "name", "index", "durationMin")}
+            "round": {k: round.get(k) for k in ("id", "name", "index", "durationMin", "publicPath")}
             | {"identityCheck": bool(round.get("identityCheck")), "requireApproval": bool(round.get("requireApproval")) and not invited},
             "openSlots": [s for s in round["slots"] if not s.get("candidateId") and _parse(s["start"]).timestamp() > cutoff],
             **({"invited": {"name": invited["name"], "email": invited["email"], "hasCv": bool(invited.get("cvKey"))}} if invited else {}),
@@ -426,7 +467,7 @@ class Service:
         self.store.put("candidate-invite", token, {"candidateId": c["id"]})
         self.save_candidate(c)
         org = self.org(org_id)
-        link = f"{self.app_url}/i/{round['inviteCode']}?t={token}"
+        link = f"{self.invite_url(round)}?t={token}"
         self._email(c["email"], f"{org['name']} invites you to interview for {job['title']}",
                     f"Hi {c['name'].split()[0]},\n\n{org['name']} would like to interview you for {job['title']} ({round['name']}).\n\n"
                     f"Finish your profile and pick a time here: {link}\n\nThe interview is by voice with an AI interviewer, about {round['durationMin']} minutes. "
