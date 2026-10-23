@@ -736,3 +736,18 @@ def test_heartbeats_never_undo_takeover_or_drop_questions(env):
     out = client.post(f"/api/interviews/{iv}/answer", json={"text": "I built and ran an orders API in Django and owned its on-call."}).json()
     assert out["turns"][0]["kind"] == "team_question"
     assert beat()["pendingQuestions"] == []
+
+
+def test_ai_rounds_can_start_straight_away(env):
+    """No open times: an online AI round still books 'now' (the AI is always free); person and office rounds can't."""
+    client, _ = env
+    h = demo_login(client)
+    r = client.post("/api/invites/nw-backend-r1/join", data={"name": "Neha Verma", "email": "neha@example.com", "slotId": "now", "consent": "true", "faceConsent": "true"},
+                    files={"cv": ("cv.txt", b"Neha Verma. Python.", "text/plain"), "photo": ("me.jpg", FACE, "image/jpeg")})
+    assert r.status_code == 200, r.text
+    iv = client.app.state.svc.store.get("interview", r.json()["interviewId"])
+    assert abs(datetime.fromisoformat(iv["slotStart"].replace("Z", "+00:00")) - datetime.now(timezone.utc)) < timedelta(minutes=1)
+    for code in ("northwind-labs~backend-engineer-r2",):
+        r = client.post(f"/api/invites/{code}/join", data={"name": "B B", "email": "b@example.com", "slotId": "now", "consent": "true"},
+                        files={"cv": ("cv.txt", b"B. Python.", "text/plain")})
+        assert r.status_code == 400

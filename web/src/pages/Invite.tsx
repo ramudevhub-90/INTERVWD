@@ -78,6 +78,9 @@ export function Invite() {
     );
   }
   const face = data.round.identityCheck && !data.invited?.hasPhoto; // returning candidates already have a photo
+  // The AI interviewer is always free, so online AI rounds can start straight away (the default when no times are open).
+  const canStartNow = (data.round.mode ?? 'ai') === 'ai' && data.round.location !== 'office';
+  const slotId = form.slotId || (canStartNow && !data.openSlots.length ? 'now' : '');
   const cvOptional = !!data.invited?.hasCv;
 
   const submit = async (e: FormEvent) => {
@@ -90,14 +93,14 @@ export function Invite() {
     if (face && !photo) next.photo = 'Add a clear photo of your face for the identity check.';
     else if (photo && (photo.size > MAX_PHOTO || !photo.type.startsWith('image/'))) next.photo = 'Use a JPEG or PNG photo under 5 MB.';
     if (face && !form.faceConsent) next.faceConsent = 'Agree to the identity check to book.';
-    if (!form.slotId) next.slotId = 'Pick a time for your interview.';
+    if (!slotId) next.slotId = 'Pick a time for your interview.';
     if (!form.consent) next.consent = 'Agree to the recording terms to book.';
     setErrors(next);
     if (Object.keys(next).length) return;
     setBusy(true);
     try {
-      const out = await api.join(code, { ...form, cv, photo, token });
-      setBooked({ ...out, start: data.openSlots.find((s) => s.id === form.slotId)!.start });
+      const out = await api.join(code, { ...form, slotId, cv, photo, token });
+      setBooked({ ...out, start: data.openSlots.find((s) => s.id === slotId)?.start ?? new Date().toISOString() });
     } catch (err) {
       setErrors({ form: (err as Error).message });
     } finally {
@@ -202,8 +205,9 @@ export function Invite() {
 
           <label className="field">
             <span>Interview time</span>
-            <select value={form.slotId} onChange={(e) => { setForm({ ...form, slotId: e.target.value }); clear('slotId'); }}>
-              <option value="">{data.openSlots.length ? 'Pick a time' : 'No times left. Ask the company for more.'}</option>
+            <select value={slotId} onChange={(e) => { setForm({ ...form, slotId: e.target.value }); clear('slotId'); }}>
+              {!canStartNow && <option value="">{data.openSlots.length ? 'Pick a time' : 'No times left. Ask the company for more.'}</option>}
+              {canStartNow && <option value="now">Now: start straight away</option>}
               {data.openSlots.map((s) => <option key={s.id} value={s.id}>{when(s.start)}</option>)}
             </select>
             {field('slotId')}

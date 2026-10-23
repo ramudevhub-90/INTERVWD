@@ -620,6 +620,10 @@ export class MockApi implements Api {
     await pause(500);
     const round = this.byCode(code);
     if (!input.consent) throw new ApiError('Agree to the recording terms to book.', 400);
+    if (input.slotId === 'now') {
+      input = { ...input, slotId: id('s') };
+      round.slots.push({ id: input.slotId, start: new Date().toISOString() });
+    }
     const slot = round.slots.find((s) => s.id === input.slotId);
     if (!slot || slot.candidateId) throw new ApiError('That slot was just taken. Pick another.', 409);
     if (!input.cv) throw new ApiError('Upload your CV as a PDF or text file.', 400);

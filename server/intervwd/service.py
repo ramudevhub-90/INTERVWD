@@ -603,6 +603,12 @@ class Service:
                 raise Problem("Agree to the identity check to book.")
         if photo and (not photo_type.startswith("image/") or len(photo) > 5 * 1024 * 1024):
             raise Problem("Your photo must be a JPEG or PNG under 5 MB.")
+        now_slot = slot_id == "now"
+        if now_slot:  # the AI interviewer is always free: online AI rounds can start straight away
+            if round.get("mode", "ai") != "ai" or round.get("location") == "office":
+                raise Problem("Pick a time for your interview.")
+            slot_id = new_id("s")
+            round["slots"].append({"id": slot_id, "start": engine.now(), "instant": True})
         slot = next((s for s in round["slots"] if s["id"] == slot_id), None)
         if not slot or slot.get("candidateId") or not self.store.create("booking", f"{round['id']}#{slot_id}", {"at": engine.now()}):
             raise Problem("That slot was just taken. Pick another.", 409)
@@ -623,6 +629,8 @@ class Service:
               "slotStart": slot["start"], "status": "scheduled", "turns": [], "snapshots": []}
         self.save_interview(iv)
         fresh = self._get("round", round["id"], "round")  # re-read so a concurrent slot edit isn't lost
+        if now_slot:
+            fresh["slots"].append(slot)
         for x in fresh["slots"]:
             if x["id"] == slot_id:
                 x["candidateId"] = c["id"]
