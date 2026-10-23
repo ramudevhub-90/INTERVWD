@@ -130,6 +130,10 @@ a.list-row:hover { background: var(--surface-2); }
 .nav-link.active { background: var(--accent-soft); color: var(--accent-text); }
 .side .foot { margin-top: auto; padding: 12px 8px 0; border-top: 1px solid var(--border); }
 .main { padding: 28px 36px 60px; max-width: 1180px; width: 100%; }
+.focus { min-height: 100vh; }
+.focus-top { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.focus-main { margin: 0 auto; max-width: 1400px; padding-top: 20px; }
+@media (max-width: 860px) { .focus-top { padding: 10px 16px; } .focus-main { padding: 16px 16px 40px; } }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
 .crumbs { font-size: 13px; color: var(--text-3); margin-bottom: 6px; }
 .crumbs a { color: var(--text-3); }

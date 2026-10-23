@@ -17,6 +17,19 @@ export function Shell() {
     navigate('/');
   };
 
+  // On a call or watching a live interview, the page is the call: no sidebar, just a way back.
+  if (/^\/app\/(call|live)\//.test(location.pathname)) {
+    return (
+      <div className="focus">
+        <header className="focus-top">
+          <Brand to="/app" />
+          <NavLink to="/app" className="btn btn-ghost"><Icon name="home" /> Back to dashboard</NavLink>
+        </header>
+        <main className="main focus-main"><Outlet /></main>
+      </div>
+    );
+  }
+
   return (
     <div className="shell">
       <aside className="side">
