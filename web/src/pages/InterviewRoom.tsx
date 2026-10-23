@@ -4,7 +4,7 @@ import { api } from '../api';
 import type { InterviewStep, Turn, VerifyResult } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PublicTop } from '../components/Shell';
-import { Loading, useLoad } from '../lib/util';
+import { Loading, possessive, useLoad } from '../lib/util';
 import { canListen, listen, speak, stopSpeaking } from '../lib/speech';
 
 const SNAPSHOT_EVERY_MS = 90_000;
@@ -212,7 +212,7 @@ export function InterviewRoom() {
           <div className="card narrow" style={{ textAlign: 'center' }}>
             <div className="orb" style={{ margin: '0 auto 14px', background: 'var(--success)' }}><Icon name="check" size={26} /></div>
             <h2>Thank you, {data.candidateName.split(' ')[0]}</h2>
-            <p className="muted" style={{ margin: '10px 0' }}>Your interview for {data.job.title} is complete. {data.orgName}'s team will review it and email you about next steps.</p>
+            <p className="muted" style={{ margin: '10px 0' }}>Your interview for {data.job.title} is complete. {possessive(data.orgName)} team will review it and email you about next steps.</p>
             <p className="faint">You can close this window.</p>
           </div>
         </div>
@@ -222,7 +222,7 @@ export function InterviewRoom() {
 
   return (
     <>
-      <PublicTop right={<span className="faint row"><Icon name="shield" size={16} /> Recorded for {data.orgName}'s recruiters</span>} />
+      <PublicTop right={<span className="faint row"><Icon name="shield" size={16} /> Recorded for {possessive(data.orgName)} recruiters</span>} />
       {header}
       <div className="room">
         <div className="stack">
@@ -231,7 +231,7 @@ export function InterviewRoom() {
             {stream && <span className="tag badge badge-success"><Icon name="camera" size={13} /> Camera on</span>}
           </div>
           <div className="card card-flat" style={{ padding: '14px 16px' }}>
-            <p className="small muted">A few snapshots are taken during the interview so the team can see who took it. There's no face recognition. Speak naturally; you can ask for a question to be repeated.</p>
+            <p className="small muted">A few snapshots are taken during the interview so the team can see who took it.{data.identity?.required ? ' They’re compared with your profile photo to confirm it’s you; a person reviews any mismatch.' : ''} Speak naturally; you can ask for a question to be repeated.</p>
           </div>
         </div>
 

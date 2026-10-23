@@ -39,8 +39,8 @@ export function scoreTone(score: number) {
   return score >= 4 ? 'badge-success' : score >= 3 ? 'badge-accent' : 'badge-warning';
 }
 
-export function ScoreBadge({ score }: { score?: number }) {
-  if (score === undefined) return <span className="faint">No score yet</span>;
+export function ScoreBadge({ score }: { score?: number | null }) {
+  if (score == null) return <span className="faint">No score yet</span>;
   return <span className={`badge ${scoreTone(score)} score`}>{score.toFixed(1)} / 5</span>;
 }
 
@@ -94,3 +94,6 @@ export function copy(text: string) {
 /** A round's public invite link: intervwd.com/<company>/<job>-r<round> (older rounds: /i/<code>). */
 export const invitePath = (round: { inviteCode: string; publicPath?: string }) => (round.publicPath ? `/${round.publicPath}` : `/i/${round.inviteCode}`);
 export const inviteUrl = (round: { inviteCode: string; publicPath?: string }) => `${location.origin}${invitePath(round)}`;
+
+/** "Northwind Labs'" and "Acme's". */
+export const possessive = (name: string) => (name.endsWith('s') ? `${name}'` : `${name}'s`);

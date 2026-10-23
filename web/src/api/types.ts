@@ -170,7 +170,7 @@ export interface DashboardView {
 export interface JobView {
   job: Job;
   rounds: Round[];
-  candidates: (Candidate & { overall?: number; roundName: string })[];
+  candidates: (Candidate & { overall?: number | null; roundName: string })[];
 }
 
 export interface InviteView {

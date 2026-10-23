@@ -67,7 +67,7 @@ function InterviewReport({ interview, round }: { interview: Interview; round?: R
           ))}
         </div>
       )}
-      <p className="faint" style={{ marginTop: 6 }}>For your team to check who took the interview. Intervwd doesn't analyse faces.</p>
+      <p className="faint" style={{ marginTop: 6 }}>For your team to check who took the interview. No emotion or personality analysis; when the identity check is on, snapshots are matched against the profile photo.</p>
 
       {interview.turns.length > 0 && (
         <>

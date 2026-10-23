@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import type { InterviewStep } from '../api/types';
 import { Icon } from '../components/Icon';
-import { Loading, useLoad } from '../lib/util';
+import { Loading, possessive, useLoad } from '../lib/util';
 import { canListen, listen, speak, stopSpeaking } from '../lib/speech';
 
 // How Intervwd would run on an Echo Show with Alexa+: hands-free, camera on, voice only.
@@ -130,7 +130,7 @@ export function EchoInterview() {
       if (step.done) {
         setPhase('done');
         setLine('Interview complete');
-        setSub(`${data.orgName}'s team will be in touch by email.`);
+        setSub(`${possessive(data.orgName)} team will be in touch by email.`);
         return;
       }
       const ans = await hear();

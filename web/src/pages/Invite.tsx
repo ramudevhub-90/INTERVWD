@@ -5,7 +5,7 @@ import { api } from '../api';
 import type { JoinResult } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PublicTop } from '../components/Shell';
-import { Loading, useLoad, when } from '../lib/util';
+import { Loading, possessive, useLoad, when } from '../lib/util';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_CV = 5 * 1024 * 1024;
@@ -86,7 +86,7 @@ export function Invite() {
             <p style={{ fontWeight: 500 }}>{when(booked.start)}</p>
             <p className="muted small" style={{ margin: '14px 0 18px' }}>
               {waiting
-                ? `${data.orgName}'s team will review your profile. Once they approve it, we'll email your interview link to ${form.email.trim()}.`
+                ? `${possessive(data.orgName)} team will review your profile. Once they approve it, we'll email your interview link to ${form.email.trim()}.`
                 : `We've emailed your interview link to ${form.email.trim()}. Use a quiet room, Chrome or Edge, and allow the camera and microphone.`}
             </p>
             {booked.interviewId && <Link className="btn btn-primary btn-block" to={`/interview/${booked.interviewId}`}>Go to the interview room</Link>}
@@ -168,7 +168,7 @@ export function Invite() {
           )}
           <label className="row small" style={{ alignItems: 'flex-start', margin: '6px 0 14px', cursor: 'pointer' }}>
             <input type="checkbox" checked={form.consent} onChange={(e) => { setForm({ ...form, consent: e.target.checked }); clear('consent'); }} />
-            <span className="muted">I agree that the interview is recorded and transcribed, and that a few camera snapshots are taken. {data.orgName}'s recruiters review them. An AI scores answers, and a person makes every decision.</span>
+            <span className="muted">I agree that the interview is recorded and transcribed, and that a few camera snapshots are taken. {possessive(data.orgName)} recruiters review them. An AI scores answers, and a person makes every decision.</span>
           </label>
           {field('consent')}
 
