@@ -34,11 +34,19 @@ export function useLive(interviewId: string, active: boolean): LiveState {
         if (mics[0]) await av.startAudioInput(mics[0].deviceId);
         const cams = await av.listVideoInputDevices();
         if (cams[0]) await av.startVideoInput(cams[0].deviceId);
-        audio.current = audio.current ?? Object.assign(document.createElement('audio'), { autoplay: true });
+        // The team member's voice: an <audio> element in the page (some browsers won't play a detached one).
+        if (!audio.current) {
+          audio.current = Object.assign(document.createElement('audio'), { autoplay: true });
+          audio.current.setAttribute('aria-hidden', 'true');
+          document.body.appendChild(audio.current);
+        }
         await av.bindAudioElement(audio.current);
+        audio.current.play().catch(() => undefined);
         av.start();
         if (cams[0]) av.startLocalVideoTile();
         stop = () => {
+          audio.current?.remove();
+          audio.current = undefined;
           av.stopLocalVideoTile();
           av.stop();
           av.stopVideoInput().catch(() => undefined);

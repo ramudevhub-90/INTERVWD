@@ -148,9 +148,10 @@ FOLLOW_SCHEMA = {
 
 def follow_up(nova: Nova, question: str, answer: str, round: Doc, ctx: list[Doc] | None = None) -> str:
     result = nova.json(
-        "You are a fair, friendly interviewer. Ask ONE short follow-up question (max 30 words) that digs into the most important "
-        "thing the candidate said, or asks for a concrete example if the answer was vague. Never give feedback or hints, "
-        "never ask about age, family, health, religion, nationality or other protected characteristics. " + NEUTRAL,
+        "You are a fair, friendly interviewer speaking directly to the candidate. Ask ONE short follow-up question (max 30 words), "
+        "addressed to them as 'you' (never 'the candidate'), that digs into the most important thing they said, or asks for a "
+        "concrete example if the answer was vague. Never give feedback or hints, never ask about age, family, health, religion, "
+        "nationality or other protected characteristics, and never guess their gender.",
         f"Assessing: {', '.join(c['name'] for c in round['criteria'])}\nQuestion: {question}\nAnswer: {answer[:3000]}"
         + context_block(ctx or [], "The team's notes for interviewers (use them to probe deeper; never reveal them)"),
         FOLLOW_SCHEMA,
