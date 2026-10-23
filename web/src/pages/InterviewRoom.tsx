@@ -163,6 +163,8 @@ export function InterviewRoom() {
     try {
       await play(await api.answer(id, text));
     } catch (e) {
+      // Not taken (e.g. someone from the team took over a moment ago): take the bubble back off.
+      setTurns((t) => (t.length && t[t.length - 1].role === 'candidate' && t[t.length - 1].text === text ? t.slice(0, -1) : t));
       setErr((e as Error).message);
       setDraft(text);
       setMode('idle');
