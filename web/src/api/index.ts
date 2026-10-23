@@ -1,6 +1,9 @@
 import type {
   AssistantReply,
   CallJoin,
+  CheckIn,
+  HiringDay,
+  KioskInfo,
   CandidateView,
   DashboardView,
   DecisionAction,
@@ -40,6 +43,15 @@ export interface Api {
   dashboard(): Promise<DashboardView>;
   settings(): Promise<OrgSettings>;
   saveSettings(slug: string): Promise<OrgSettings>;
+  saveOffice(address: string, rooms: string[]): Promise<OrgSettings>;
+  newKiosk(): Promise<OrgSettings>;
+  hiringDay(): Promise<HiringDay>;
+
+  // Office Echo Shows (reception and interview rooms), authorised by the kiosk link
+  kiosk(token: string): Promise<KioskInfo>;
+  kioskCheckin(token: string, name: string): Promise<CheckIn>;
+  kioskArrive(token: string, interviewId: string): Promise<{ room: string | null; message: string }>;
+  kioskRoom(token: string, room: string): Promise<{ room: string; orgName: string; interviewId: string | null; firstName?: string }>;
   createJob(input: NewJob): Promise<string>;
   job(jobId: string): Promise<JobView>;
   createRound(jobId: string, input: NewRound): Promise<Round>;

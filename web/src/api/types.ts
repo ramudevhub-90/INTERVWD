@@ -56,6 +56,7 @@ export interface Round {
   mode?: 'ai' | 'human'; // who interviews: the AI by voice, or a person over a video call with a scorecard
   meetingUrl?: string; // person-run rounds: the video call link
   interviewers?: { name: string; email: string }[];
+  location?: 'online' | 'office'; // at the office: reception check-in with Alexa, interview in an Echo Show room
   decisionMode?: 'human' | 'auto'; // auto: the AI fast-tracks clear, confident passes; everything else goes to a person
   autoAdvance?: { minOverall: number; minEach: number };
 }
@@ -195,6 +196,7 @@ export interface InviteView {
   job: Job;
   round: Pick<Round, 'id' | 'name' | 'index' | 'durationMin' | 'publicPath' | 'meetingUrl'> & {
     identityCheck: boolean; requireApproval: boolean; mode: 'ai' | 'human'; interviewers: string[];
+    location?: 'online' | 'office'; address?: string;
   };
   openSlots: Slot[];
   invited?: { name: string; email: string; hasCv: boolean; hasPhoto?: boolean; returning?: boolean }; // on a personal link
@@ -264,6 +266,7 @@ export interface NewRound {
   mode: 'ai' | 'human';
   meetingUrl: string;
   interviewers: { name: string; email: string }[];
+  location: 'online' | 'office';
 }
 
 export interface Scorecard {
@@ -323,6 +326,31 @@ export interface OrgSettings {
   orgName: string;
   slug: string; // the company's name in invite links: intervwd.com/<slug>/<round>
   locked: boolean; // the demo company can't rename its links
+  office: { address: string; rooms: string[] };
+  kiosk: string | null; // the reception Echo Show's link; rooms add /room/<name>
+}
+
+export interface KioskInfo {
+  orgName: string;
+  address: string;
+  rooms: string[];
+}
+
+export interface CheckIn {
+  interviewId: string;
+  firstName: string;
+  jobTitle: string;
+  roundName: string;
+  slotStart: string;
+  identityRequired: boolean;
+  identityStatus: string;
+  withPerson: boolean;
+  interviewers: string[];
+}
+
+export interface HiringDay {
+  counts: { expected: number; arrived: number; in_room: number; done: number; no_show: number };
+  rows: { interviewId: string; candidateId: string; name: string; slotStart: string; room: string | null; state: 'expected' | 'arrived' | 'in_room' | 'done' | 'no_show'; overall: number | null }[];
 }
 
 /** A seat in an interview's video call (Amazon Chime SDK meeting + this person's attendee). */

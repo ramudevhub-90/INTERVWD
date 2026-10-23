@@ -16,8 +16,18 @@ const WAKE = /\b(alexa|start|begin|ready)\b/i;
 
 type Phase = 'wake' | 'identity' | 'interview' | 'done' | 'blocked';
 
+/** The candidate's own Echo Show interview (simulated), from their interview link. */
 export function EchoInterview() {
   const { id = '' } = useParams();
+  return <EchoSession id={id} />;
+}
+
+/**
+ * One voice interview on an Echo Show screen. `room` marks an office interview room: the session
+ * starts by itself (the candidate was checked in at reception) and calls `onFinished` when done,
+ * so the room's screen can wait for the next person.
+ */
+export function EchoSession({ id, room, onFinished }: { id: string; room?: string; onFinished?: () => void }) {
   const { data, error } = useLoad(() => api.room(id), [id]);
   const [phase, setPhase] = useState<Phase>('wake');
   const [line, setLine] = useState('Say "Alexa, start my interview"');
@@ -129,8 +139,9 @@ export function EchoInterview() {
       for (const t of step.turns) await say(t.text);
       if (step.done) {
         setPhase('done');
-        setLine('Interview complete');
+        setLine(room ? `Thank you, ${data.candidateName.split(' ')[0]}. You can leave the room now.` : 'Interview complete');
         setSub(`${possessive(data.orgName)} team will be in touch by email.`);
+        if (onFinished) setTimeout(onFinished, 12000);
         return;
       }
       const ans = await hear();
@@ -139,9 +150,19 @@ export function EchoInterview() {
     }
   }, [data, hear, id, identity, say]);
 
+  // In an office room the candidate is already checked in: begin as soon as the camera is ready.
+  const started = useRef(false);
+  useEffect(() => {
+    if (!room || !data || !stream || started.current) return;
+    started.current = true;
+    setLine(`Welcome, ${data.candidateName.split(' ')[0]}. Take a seat; we'll begin in a moment.`);
+    const t = setTimeout(run, 3500);
+    return () => clearTimeout(t);
+  }, [room, data, stream, run]);
+
   // Wake word: "Alexa, start my interview".
   useEffect(() => {
-    if (phase !== 'wake' || !data || !stream || !canListen) return;
+    if (room || phase !== 'wake' || !data || !stream || !canListen) return;
     const l = listen((t) => {
       if (WAKE.test(t)) {
         l.stop();
@@ -160,14 +181,14 @@ export function EchoInterview() {
         <div className="echo-screen">
           <div className="echo-top">
             <span><Icon name="briefcase" size={14} /> {data.orgName} · {data.job.title}</span>
-            <span>{progress && phase === 'interview' ? `Question ${progress.question} of ${progress.of}` : data.round.name}</span>
+            <span>{progress && phase === 'interview' ? `Question ${progress.question} of ${progress.of}` : room ? `${room} · ${data.round.name}` : data.round.name}</span>
           </div>
           <div className="echo-body">
             <div className="echo-text">
               <p className="echo-line">{line}</p>
               {state === 'listening' && <p className="echo-heard">{heard || 'Listening…'}</p>}
               {sub && <p className="echo-sub">{sub}</p>}
-              {phase === 'wake' && (
+              {phase === 'wake' && !room && (
                 <button className="btn btn-primary" style={{ marginTop: 18 }} onClick={run} disabled={!stream}>
                   {stream ? (canListen ? 'Or tap to start' : 'Tap to start') : 'Waiting for camera'}
                 </button>
@@ -183,10 +204,10 @@ export function EchoInterview() {
         </div>
         <div className="echo-base" />
       </div>
-      <p className="faint" style={{ marginTop: 16, textAlign: 'center', maxWidth: 520 }}>
+      {!room && <p className="faint" style={{ marginTop: 16, textAlign: 'center', maxWidth: 520 }}>
         Echo Show with Alexa+ (simulated). Alexa+ doesn't yet let skills use the camera, so this shows the experience we're proposing.{' '}
         <Link to={`/interview/${id}`}>Use the standard interview room instead</Link>
-      </p>
+      </p>}
     </div>
   );
 }

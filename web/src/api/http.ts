@@ -99,6 +99,34 @@ export class HttpApi implements Api {
     return call<import('./types').OrgSettings>('POST', '/settings', { slug });
   }
 
+  saveOffice(address: string, rooms: string[]) {
+    return call<import('./types').OrgSettings>('POST', '/settings/office', { address, rooms });
+  }
+
+  newKiosk() {
+    return call<import('./types').OrgSettings>('POST', '/settings/kiosk');
+  }
+
+  hiringDay() {
+    return call<import('./types').HiringDay>('GET', '/hiring-day');
+  }
+
+  kiosk(token: string) {
+    return call<import('./types').KioskInfo>('GET', `/kiosk/${encodeURIComponent(token)}`);
+  }
+
+  kioskCheckin(token: string, name: string) {
+    return call<import('./types').CheckIn>('POST', `/kiosk/${encodeURIComponent(token)}/checkin`, { name });
+  }
+
+  kioskArrive(token: string, interviewId: string) {
+    return call<{ room: string | null; message: string }>('POST', `/kiosk/${encodeURIComponent(token)}/arrive`, { interviewId });
+  }
+
+  kioskRoom(token: string, room: string) {
+    return call<{ room: string; orgName: string; interviewId: string | null; firstName?: string }>('GET', `/kiosk/${encodeURIComponent(token)}/room/${encodeURIComponent(room)}`);
+  }
+
   dashboard() {
     return call<import('./types').DashboardView>('GET', '/dashboard');
   }

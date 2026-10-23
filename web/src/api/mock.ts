@@ -269,7 +269,8 @@ export class MockApi implements Api {
     await pause();
     const { orgId } = this.recruiter();
     const org = this.find(this.db.orgs, orgId!, 'company');
-    return { orgName: org.name, slug: (org as Org & { slug?: string }).slug ?? org.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), locked: org.id === 'org_northwind' };
+    return { orgName: org.name, slug: (org as Org & { slug?: string }).slug ?? org.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), locked: org.id === 'org_northwind',
+      office: this.office, kiosk: `${location.origin}/kiosk/sample` };
   }
 
   async saveSettings(slug: string): Promise<OrgSettings> {
@@ -283,6 +284,37 @@ export class MockApi implements Api {
     for (const r of this.db.rounds.filter((x) => x.orgId === orgId && x.publicPath)) r.publicPath = r.publicPath!.replace(`${old}/`, `${slug}/`);
     this.save();
     return this.settings();
+  }
+
+  private office = { address: 'Northwind Labs, 4th floor, Prestige Tech Park, Bengaluru 560103', rooms: ['Room 1', 'Room 2'] };
+
+  async saveOffice(address: string, rooms: string[]) {
+    this.office = { address, rooms };
+    return this.settings();
+  }
+
+  async newKiosk() {
+    return this.settings();
+  }
+
+  async hiringDay(): Promise<import('./types').HiringDay> {
+    return { counts: { expected: 1, arrived: 0, in_room: 0, done: 1, no_show: 0 }, rows: [] };
+  }
+
+  async kiosk(): Promise<import('./types').KioskInfo> {
+    return { orgName: 'Northwind Labs', ...this.office };
+  }
+
+  async kioskCheckin(): Promise<import('./types').CheckIn> {
+    throw new ApiError('Reception check-in needs the live server.', 409);
+  }
+
+  async kioskArrive(): Promise<{ room: string | null; message: string }> {
+    throw new ApiError('Reception check-in needs the live server.', 409);
+  }
+
+  async kioskRoom(_t: string, room: string) {
+    return { room, orgName: 'Northwind Labs', interviewId: null };
   }
 
   async createJob(input: NewJob) {
@@ -318,7 +350,7 @@ export class MockApi implements Api {
       id: id('round'), jobId, orgId: orgId!, index, name: `Round ${index} · ${input.name.trim()}`, durationMin: input.durationMin,
       criteria: input.criteria.map((c) => ({ id: id('c'), ...c })), questions: input.questions, inviteCode: `${slug}-r${index}-${Math.random().toString(36).slice(2, 6)}`, slots: [],
       identityCheck: input.identityCheck, requireApproval: input.requireApproval, publicPath: named,
-      decisionMode: input.decisionMode, autoAdvance: input.autoAdvance, mode: input.mode, meetingUrl: input.meetingUrl, interviewers: input.interviewers,
+      decisionMode: input.decisionMode, autoAdvance: input.autoAdvance, mode: input.mode, meetingUrl: input.meetingUrl, interviewers: input.interviewers, location: input.location,
     };
     this.db.rounds.push(round);
     this.save();

@@ -89,7 +89,9 @@ export function Invite() {
                 ? `${possessive(data.orgName)} team will review your profile. Once they approve it, we'll email your interview link to ${form.email.trim()}.`
                 : `We've emailed your interview link to ${form.email.trim()}. Use a quiet room, Chrome or Edge, and allow the camera and microphone.`}
             </p>
-            {booked.interviewId && data.round.mode === 'human' ? (
+            {booked.interviewId && data.round.location === 'office' ? (
+              <p className="small" style={{ marginBottom: 6 }}>At {data.round.address}. When you arrive, say to the Echo Show at reception: <b>"Alexa, I'm here for my interview."</b></p>
+            ) : booked.interviewId && data.round.mode === 'human' ? (
               <>
                 <p className="small" style={{ marginBottom: 12 }}>A video call with {data.round.interviewers.join(', ') || 'the team'}.</p>
                 {data.round.meetingUrl && <a className="btn btn-primary btn-block" href={data.round.meetingUrl} target="_blank" rel="noreferrer">Open the video call link</a>}
@@ -117,7 +119,10 @@ export function Invite() {
         <form className="card" style={{ width: '100%', maxWidth: 540 }} onSubmit={submit} noValidate>
           <p className="faint">{data.invited?.returning ? `Welcome back, ${data.invited.name.split(' ')[0]}. ${data.orgName} would like you to take the next round for` : data.invited ? `${data.orgName} invited you, ${data.invited.name.split(' ')[0]}, to interview for` : `${data.orgName} invited you to interview for`}</p>
           <h1 style={{ fontSize: 24, margin: '4px 0 6px' }}>{data.job.title}</h1>
-          <p className="muted small">{data.job.location} · {data.round.name} · about {data.round.durationMin} minutes, {data.round.mode === 'human' ? `a video call with ${data.round.interviewers.join(', ') || 'the team'}` : 'by voice with an AI interviewer'}</p>
+          <p className="muted small">{data.job.location} · {data.round.name} · about {data.round.durationMin} minutes, {data.round.location === 'office'
+            ? (data.round.mode === 'human' ? `at our office with ${data.round.interviewers.join(', ') || 'the team'}` : 'at our office, by voice with Alexa on an Echo Show')
+            : data.round.mode === 'human' ? `a video call with ${data.round.interviewers.join(', ') || 'the team'}` : 'by voice with an AI interviewer'}</p>
+          {data.round.location === 'office' && data.round.address && <p className="small" style={{ marginTop: 6 }}><Icon name="home" size={14} /> {data.round.address}</p>}
           {(data.round.requireApproval || face) && (
             <div className="row wrap" style={{ gap: 6, marginTop: 10 }}>
               {data.round.requireApproval && <span className="badge">The team approves profiles first</span>}

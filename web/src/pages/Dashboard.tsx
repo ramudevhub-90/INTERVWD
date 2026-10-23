@@ -7,6 +7,7 @@ import { Loading, ScoreBadge, initials, useAuth, useLoad, when } from '../lib/ut
 export function Dashboard() {
   const { session } = useAuth();
   const { data, error } = useLoad(() => api.dashboard(), []);
+  const day = useLoad(() => api.hiringDay().catch(() => undefined), []);
   if (!data) return <Loading error={error} />;
   const first = session?.name.split(' ')[0];
 
@@ -23,6 +24,26 @@ export function Dashboard() {
         <div className="stat"><span className="faint">Waiting for your decision</span><b>{data.stats.awaitingDecision}</b></div>
         <div className="stat"><span className="faint">Candidates</span><b>{data.stats.candidates}</b></div>
       </div>
+
+      {day.data && day.data.rows.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head"><h2>Today at the office</h2><span className="faint">Reception check-ins and Echo Show rooms</span></div>
+          <div className="grid cols-4" style={{ gap: 10, marginBottom: 10 }}>
+            {([['Interviewed', day.data.counts.done], ['In a room', day.data.counts.in_room], ['Waiting at reception', day.data.counts.arrived], ['No-shows', day.data.counts.no_show]] as const).map(([k, v]) => (
+              <div key={k} className="stat" style={{ padding: '10px 12px' }}><span className="faint">{k}</span><b style={{ fontSize: 22 }}>{v}</b></div>
+            ))}
+          </div>
+          {day.data.rows.map((r) => (
+            <Link key={r.interviewId} className="list-row" to={`/app/candidates/${r.candidateId}`}>
+              <Icon name="clock" />
+              <div className="grow"><div style={{ fontWeight: 500 }}>{r.name}</div><div className="faint">{when(r.slotStart)}{r.room ? ` · ${r.room}` : ''}</div></div>
+              <span className={`badge ${r.state === 'done' ? 'badge-success' : r.state === 'in_room' ? 'badge-accent' : r.state === 'no_show' ? 'badge-danger' : r.state === 'arrived' ? 'badge-warning' : ''}`}>
+                {{ expected: 'Expected', arrived: 'At reception', in_room: 'Interviewing', done: 'Done', no_show: 'No-show' }[r.state]}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {((data.pending?.length ?? 0) > 0 || (data.identityLocked?.length ?? 0) > 0) && (
         <div className="card" style={{ marginBottom: 16, borderColor: 'var(--warning)' }}>

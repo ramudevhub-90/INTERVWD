@@ -33,7 +33,9 @@ export function NewRound() {
     questions: [...TEMPLATES.screen.questions], identityCheck: true, requireApproval: true,
     decisionMode: 'human' as 'human' | 'auto', autoAdvance: { minOverall: 4.0, minEach: 3.0 },
     mode: 'ai' as 'ai' | 'human', meetingUrl: '', interviewers: [{ name: '', email: '' }],
+    location: 'online' as 'online' | 'office',
   }));
+  const office = form.location === 'office';
   const human = form.mode === 'human';
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -59,7 +61,7 @@ export function NewRound() {
     if (human && form.meetingUrl.trim() && !/^https:\/\/\S+$/.test(form.meetingUrl.trim())) return setError('The meeting link must start with https://');
     setBusy(true);
     try {
-      await api.createRound(jobId, { ...form, criteria, questions, interviewers: form.interviewers.filter((i) => i.name.trim()), meetingUrl: form.meetingUrl.trim() });
+      await api.createRound(jobId, { ...form, criteria, questions, interviewers: form.interviewers.filter((i) => i.name.trim()), meetingUrl: office ? '' : form.meetingUrl.trim() });
       navigate(`/app/jobs/${jobId}?tab=rounds`);
     } catch (err) {
       setError((err as Error).message);
@@ -104,11 +106,24 @@ export function NewRound() {
               </label>
             ))}
           </div>
+          <h3 style={{ margin: '18px 0 10px' }}>Where</h3>
+          <div className="grid cols-2" style={{ gap: 10 }}>
+            {([
+              ['online', 'Online', human ? 'A video call: Intervwd hosts it, or use your own meeting link.' : 'Candidates take it on their laptop or phone, or their own Echo Show.'],
+              ['office', 'At the office', human ? 'Candidates check in with Alexa at reception; the interviewer collects them.' : 'Candidates check in with Alexa at reception and are interviewed by Alexa on an Echo Show in an interview room.'],
+            ] as const).map(([w, label, hint]) => (
+              <label key={w} className="row" style={{ alignItems: 'flex-start', cursor: 'pointer', padding: '10px 12px', borderRadius: 'var(--radius)', border: `1px solid ${form.location === w ? 'var(--accent)' : 'var(--border)'}` }}>
+                <input type="radio" name="location" checked={form.location === w} onChange={() => setForm({ ...form, location: w })} style={{ width: 16, marginTop: 3 }} />
+                <span><span className="small" style={{ fontWeight: 600 }}>{label}</span><br /><span className="faint">{hint}</span></span>
+              </label>
+            ))}
+          </div>
+          {office && <p className="faint" style={{ marginTop: 8 }}>Uses the office address and Echo Show rooms in <Link to="/app/settings">Settings</Link>.</p>}
           {human && (
             <div style={{ marginTop: 14 }}>
-              <label className="field"><span>Meeting link (optional)</span>
+              {!office && <label className="field"><span>Meeting link (optional: leave empty and Intervwd hosts the call)</span>
                 <input value={form.meetingUrl} onChange={(e) => setForm({ ...form, meetingUrl: e.target.value })} placeholder="https://meet.google.com/abc-defg-hij" />
-              </label>
+              </label>}
               <span className="small" style={{ fontWeight: 500, color: 'var(--text-2)' }}>Interviewers</span>
               {form.interviewers.map((p, i) => (
                 <div key={i} className="row" style={{ marginTop: 8 }}>
