@@ -274,7 +274,7 @@ export function InterviewRoom() {
     <>
       <PublicTop right={<span className="faint row"><Icon name="shield" size={16} /> Recorded for {possessive(data.orgName)} recruiters</span>} />
       {header}
-      <div className="room">
+      <div className={`room ${stage === 'live' ? 'is-live' : ''}`}>
         <div className="stack room-side">
           <div className="video">
             {stream ? <video ref={video} autoPlay muted playsInline /> : <div className="stack" style={{ alignItems: 'center', gap: 8 }}><Icon name="camera" size={32} /><span className="small">{mediaError ?? 'Starting camera…'}</span></div>}

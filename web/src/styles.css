@@ -240,8 +240,8 @@ a.list-row:hover { background: var(--surface-2); }
 
 /* ---------- Phones: question and controls first, camera small ---------- */
 @media (max-width: 860px) {
-  .room .room-main { order: 1; }
-  .room .room-side { order: 2; }
+  .room.is-live .room-main { order: 1; } /* during the interview: question first; before it, the camera (identity check) */
+  .room.is-live .room-side { order: 2; }
   .room .video { aspect-ratio: 16 / 10; max-height: 30vh; }
   .room .question { font-size: 17px; }
   .room .card { padding: 16px; }
