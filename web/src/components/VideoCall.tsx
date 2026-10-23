@@ -30,6 +30,30 @@ export function VideoCall({ seat, otherName, onLeave, listenOnly, unmuteSignal }
   const [muted, setMuted] = useState(!!listenOnly);
   const [cameraOn, setCameraOn] = useState(!listenOnly);
   const [remoteVideo, setRemoteVideo] = useState(false);
+  const [notice, setNotice] = useState<string>();
+  const devicesOn = useRef(false);
+
+  /** Microphone and camera, each on its own: a missing or busy one never stops the call. */
+  const startDevices = async (): Promise<boolean> => {
+    const av = session.current?.audioVideo;
+    if (!av) return false;
+    if (devicesOn.current) return true;
+    let mic = false;
+    let cam = false;
+    try {
+      const mics = await av.listAudioInputDevices();
+      if (mics[0]) { await av.startAudioInput(mics[0].deviceId); mic = true; }
+    } catch { /* no microphone */ }
+    try {
+      const cams = await av.listVideoInputDevices();
+      if (cams[0]) { await av.startVideoInput(cams[0].deviceId); cam = true; }
+    } catch { /* no camera */ }
+    devicesOn.current = mic || cam;
+    setNotice(mic && cam ? undefined : !mic && !cam
+      ? 'Your camera and microphone aren’t available (another tab or app may be using them). Close it and try again.'
+      : !mic ? 'Your microphone isn’t available.' : 'Your camera isn’t available, so you’re on audio only.');
+    return devicesOn.current;
+  };
 
   useEffect(() => {
     let stopped = false;
@@ -59,14 +83,12 @@ export function VideoCall({ seat, otherName, onLeave, listenOnly, unmuteSignal }
 
     (async () => {
       try {
-        const mics = await av.listAudioInputDevices();
-        if (mics[0]) await av.startAudioInput(mics[0].deviceId);
-        const cams = await av.listVideoInputDevices();
-        if (cams[0]) await av.startVideoInput(cams[0].deviceId);
+        // Watching needs no camera or microphone: they only start when you speak (or take over).
+        const ready = listenOnly ? false : await startDevices();
         if (audio.current) await av.bindAudioElement(audio.current);
         av.start();
-        if (listenOnly) av.realtimeMuteLocalAudio();
-        else if (cams[0]) av.startLocalVideoTile();
+        if (listenOnly || !ready) av.realtimeMuteLocalAudio();
+        else av.startLocalVideoTile();
         if (!stopped) setStatus((st) => (st === 'connecting' ? 'waiting' : st));
       } catch (e) {
         setError((e as Error).message || 'Allow the camera and microphone to join the call.');
@@ -89,10 +111,13 @@ export function VideoCall({ seat, otherName, onLeave, listenOnly, unmuteSignal }
     const av = session.current?.audioVideo;
     if (!av || unmuteSignal === undefined) return;
     if (unmuteSignal) {
-      av.realtimeUnmuteLocalAudio();
-      av.startLocalVideoTile();
-      setMuted(false);
-      setCameraOn(true);
+      startDevices().then((ok) => {
+        if (!ok) return;
+        av.realtimeUnmuteLocalAudio();
+        av.startLocalVideoTile();
+        setMuted(false);
+        setCameraOn(true);
+      });
     } else {
       av.realtimeMuteLocalAudio();
       av.stopLocalVideoTile();
@@ -101,16 +126,18 @@ export function VideoCall({ seat, otherName, onLeave, listenOnly, unmuteSignal }
     }
   }, [unmuteSignal]);
 
-  const toggleMute = () => {
+  const toggleMute = async () => {
     const av = session.current?.audioVideo;
     if (!av) return;
+    if (muted && !(await startDevices())) return;
     if (muted) av.realtimeUnmuteLocalAudio();
     else av.realtimeMuteLocalAudio();
     setMuted(!muted);
   };
-  const toggleCamera = () => {
+  const toggleCamera = async () => {
     const av = session.current?.audioVideo;
     if (!av) return;
+    if (!cameraOn && !(await startDevices())) return;
     if (cameraOn) av.stopLocalVideoTile();
     else av.startLocalVideoTile();
     setCameraOn(!cameraOn);
@@ -136,6 +163,7 @@ export function VideoCall({ seat, otherName, onLeave, listenOnly, unmuteSignal }
       </div>
       <audio ref={audio} />
       {error && <p className="error">{error}</p>}
+      {notice && !error && <p className="small muted" style={{ marginTop: 8 }}>{notice}</p>}
       {status !== 'ended' && (
         <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
           <button className="btn" onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}><Icon name={muted ? 'micOff' : 'mic'} /> {muted ? 'Unmute' : 'Mute'}</button>

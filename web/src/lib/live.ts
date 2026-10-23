@@ -31,10 +31,16 @@ export function useLive(interviewId: string, active: boolean, teamVideo?: React.
         const logger = new chime.ConsoleLogger('intervwd-live', chime.LogLevel.ERROR);
         const session = new chime.DefaultMeetingSession(new chime.MeetingSessionConfiguration(seat.meeting, seat.attendee), logger, new chime.DefaultDeviceController(logger));
         const av = session.audioVideo;
-        const mics = await av.listAudioInputDevices();
-        if (mics[0]) await av.startAudioInput(mics[0].deviceId);
-        const cams = await av.listVideoInputDevices();
-        if (cams[0]) await av.startVideoInput(cams[0].deviceId);
+        // Each device on its own: a busy camera still lets the team hear the candidate, and the reverse.
+        let camOn = false;
+        try {
+          const mics = await av.listAudioInputDevices();
+          if (mics[0]) await av.startAudioInput(mics[0].deviceId);
+        } catch { /* no microphone */ }
+        try {
+          const cams = await av.listVideoInputDevices();
+          if (cams[0]) { await av.startVideoInput(cams[0].deviceId); camOn = true; }
+        } catch { /* no camera */ }
         // The team member's voice: an <audio> element in the page (some browsers won't play a detached one).
         if (!audio.current) {
           audio.current = Object.assign(document.createElement('audio'), { autoplay: true });
@@ -53,7 +59,7 @@ export function useLive(interviewId: string, active: boolean, teamVideo?: React.
           videoTileWasRemoved: () => setTeamOnCamera(false),
         });
         av.start();
-        if (cams[0]) av.startLocalVideoTile();
+        if (camOn) av.startLocalVideoTile();
         stop = () => {
           audio.current?.remove();
           audio.current = undefined;
