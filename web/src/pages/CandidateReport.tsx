@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import type { DecisionAction, Interview, Round } from '../api/types';
 import { Icon } from '../components/Icon';
 import { PageHead } from '../components/Shell';
 import { Loading, ScoreBadge, StatusBadge, initials, useLoad, when } from '../lib/util';
 
-function ScorecardForm({ interview, round, onDone }: { interview: Interview; round: Round; onDone: () => void }) {
+export function ScorecardForm({ interview, round, onDone }: { interview: Interview; round: Round; onDone: () => void }) {
   const [scores, setScores] = useState<Record<string, { score: number; notes: string }>>(() => Object.fromEntries(round.criteria.map((c) => [c.id, { score: 0, notes: '' }])));
   const [summary, setSummary] = useState('');
   const [highlights, setHighlights] = useState('');
@@ -62,7 +62,10 @@ function InterviewReport({ interview, round, onChange }: { interview: Interview;
     return (
       <div className="card">
         <div className="card-head"><h2>{round.name}</h2><span className="badge">With {round.interviewers?.map((i) => i.name).join(', ') || 'a person'}</span></div>
-        <p className="muted small">Video call booked for {when(interview.slotStart)}{round.meetingUrl ? <> · <a href={round.meetingUrl} target="_blank" rel="noreferrer">meeting link</a></> : null}. After the call, the interviewer fills in this scorecard.</p>
+        <p className="muted small">Video call booked for {when(interview.slotStart)}. After the call, the interviewer fills in this scorecard.</p>
+        {round.meetingUrl
+          ? <a className="btn btn-sm" style={{ marginTop: 10 }} href={round.meetingUrl} target="_blank" rel="noreferrer"><Icon name="link" size={15} /> Open the meeting link</a>
+          : <Link className="btn btn-primary btn-sm" style={{ marginTop: 10 }} to={`/app/call/${interview.id}`}><Icon name="camera" size={15} /> Start the video call</Link>}
         {round.questions.length > 0 && (
           <details style={{ marginTop: 10 }}><summary className="small" style={{ cursor: 'pointer' }}>Interview guide</summary>
             <ol className="small muted" style={{ paddingLeft: 18 }}>{round.questions.map((q) => <li key={q}>{q}</li>)}</ol>

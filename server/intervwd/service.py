@@ -24,7 +24,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from . import engine
+from . import engine, ical
+from .calls import Calls, FakeCalls
 from .faces import FaceMatcher, FakeMatcher
 from .knowledge import KINDS, Knowledge, NoKnowledge
 from .nova import Nova
@@ -87,10 +88,11 @@ class Service:
     mailer: Any = None  # auth.Mailer; None skips candidate emails (tests)
     kb: Knowledge = NoKnowledge()  # type: ignore[assignment]
     faces: FaceMatcher = FakeMatcher()  # type: ignore[assignment]
+    calls: Calls = FakeCalls()  # type: ignore[assignment]
 
-    def _email(self, to: str, subject: str, text: str) -> None:
+    def _email(self, to: str, subject: str, text: str, invite: str | None = None) -> None:
         if self.mailer:
-            self.mailer.send(to, subject, text)
+            self.mailer.send(to, subject, text, invite) if invite else self.mailer.send(to, subject, text)
 
     # ---------- Lookups ----------
 
@@ -600,26 +602,41 @@ class Service:
         return {"interviewId": iv["id"] if approved else None, "status": c["status"], "candidate": c, "interview": iv, "job": job, "round": fresh}
 
     def _email_interview_link(self, c: Doc, iv: Doc, job: Doc, round: Doc) -> None:
+        """Booking emails, each with a calendar invite for the slot."""
         org = self.org(c["orgId"])
         when = iv["slotStart"].replace("T", " ")[:16] + " UTC"
+        minutes = int(round.get("durationMin") or 30)
+        organizer = (org["name"], (self.mailer.sender.split("<")[-1].rstrip(">") if self.mailer and self.mailer.sender else "no-reply@intervwd.com"))
+        title = f"{org['name']} interview: {job['title']}, {round['name'].split(' · ')[0]}"
+        candidate_link = f"{self.app_url}/interview/{iv['id']}"
         if round.get("mode") == "human":
-            names = ", ".join(i["name"] for i in round.get("interviewers", [])) or f"the {org['name']} team"
-            where = round.get("meetingUrl") or "a video call; the team will send the link"
+            people = round.get("interviewers", [])
+            names = ", ".join(i["name"] for i in people) or f"the {org['name']} team"
+            # A pasted meeting link, or the call Intervwd hosts (Amazon Chime SDK) behind the candidate's link.
+            where = round.get("meetingUrl") or candidate_link
+            invite = ical.invite(f"{iv['id']}@intervwd.com", iv["slotStart"], minutes, f"{title} with {names}",
+                                 f"Video call with {names}. Join: {where}", where, organizer, [(c["name"], c["email"]), *[(p["name"], p["email"]) for p in people]])
             self._email(c["email"], f"Your {org['name']} interview is booked",
                         f"Hi {c['name'].split()[0]},\n\nYour interview for {job['title']} ({round['name']}) is with {names}, on {when}.\n\n"
-                        f"Join here: {where}\n\nIntervwd, on behalf of {org['name']}")
-            for person in round.get("interviewers", []):
+                        f"Join the video call here: {where}\n\nThe calendar invite is attached.\n\nIntervwd, on behalf of {org['name']}", invite)
+            for person in people:
                 if person.get("email"):
+                    host = round.get("meetingUrl") or f"{self.app_url}/app/call/{iv['id']}"
                     self._email(person["email"], f"Interview: {c['name']} for {job['title']}, {when}",
                                 f"Hi {person['name'].split()[0]},\n\nYou're interviewing {c['name']} for {job['title']} ({round['name']}) on {when}.\n"
-                                f"Meeting: {where}\n\nTheir profile, earlier rounds and your scorecard: {self.app_url}/app/candidates/{c['id']}\n\n"
-                                f"Intervwd")
+                                f"Join the call: {host}\n\nTheir profile, earlier rounds and your scorecard: {self.app_url}/app/candidates/{c['id']}\n\n"
+                                f"The calendar invite is attached.\n\nIntervwd",
+                                ical.invite(f"{iv['id']}@intervwd.com", iv["slotStart"], minutes, f"Interview {c['name']}: {job['title']}",
+                                            f"Join the call: {host}\nProfile and scorecard: {self.app_url}/app/candidates/{c['id']}", host, organizer,
+                                            [(person["name"], person["email"])]))
             return
         check = " You'll be asked to look at the camera for a quick identity check first." if round.get("identityCheck") else ""
+        invite = ical.invite(f"{iv['id']}@intervwd.com", iv["slotStart"], minutes, title,
+                             f"AI voice interview. Join here (Chrome or Edge, in a quiet room): {candidate_link}", candidate_link, organizer, [(c["name"], c["email"])])
         self._email(c["email"], f"Your {org['name']} interview is booked",
-                    f"Hi {c['name'].split()[0]},\n\nYour interview for {job['title']} ({round['name']}) is booked for {iv['slotStart'].replace('T', ' ')[:16]} UTC.\n\n"
-                    f"Join here when you're ready (Chrome or Edge, in a quiet room):{check}\n{self.app_url}/interview/{iv['id']}\n\n"
-                    f"This link is personal to you; don't share it.\n\nIntervwd, on behalf of {org['name']}")
+                    f"Hi {c['name'].split()[0]},\n\nYour interview for {job['title']} ({round['name']}) is booked for {when}.\n\n"
+                    f"Join here when you're ready (Chrome or Edge, in a quiet room):{check}\n{candidate_link}\n\n"
+                    f"The calendar invite is attached. This link is personal to you; don't share it.\n\nIntervwd, on behalf of {org['name']}", invite)
 
     def review_signup(self, org_id: str, candidate_id: str, approve: bool, by: str) -> Doc:
         c = self._owned("candidate", candidate_id, org_id, "candidate")
@@ -766,6 +783,27 @@ class Service:
         if done and round.get("decisionMode") == "auto" and iv["triage"]["band"] == "fast_track":
             self.decide(iv["orgId"], c["id"], "advance", f"Moved on automatically. {iv['triage']['reasons'][0]}", "Intervwd (automatic)", automatic=True)
         return {"turns": turns, "done": done, "progress": engine.progress(iv, round)}
+
+    def join_call(self, interview_id: str, who: str, org_id: str | None = None) -> Doc:
+        """A seat in the interview's video call: the candidate (by their link) or a recruiter (signed in)."""
+        iv = self._owned("interview", interview_id, org_id, "interview") if org_id else self._get("interview", interview_id, "interview")
+        round = self._get("round", iv["roundId"], "round")
+        if round.get("mode") != "human":
+            raise Problem("This round is an AI interview, not a video call.", 409)
+        if round.get("meetingUrl"):
+            raise Problem("This round uses its own meeting link.", 409)
+        if iv["status"] == "completed":
+            raise Problem("This interview has finished.", 409)
+        c = self._get("candidate", iv["candidateId"], "candidate")
+        if not org_id and c["status"] in ("pending_approval", "declined"):
+            raise Problem("This interview isn't confirmed yet.", 403)
+        meeting, attendee = self.calls.join(iv.get("meetingId"), iv["id"], who)
+        if iv.get("meetingId") != meeting["MeetingId"]:
+            iv["meetingId"] = meeting["MeetingId"]
+            self.save_interview(iv)
+        job = self._get("job", iv["jobId"], "job")
+        return {"meeting": meeting, "attendee": attendee, "candidateName": c["name"], "jobTitle": job["title"], "roundName": round["name"],
+                "orgName": self.org(iv["orgId"])["name"], "interviewers": [i["name"] for i in round.get("interviewers", [])], "candidateId": c["id"]}
 
     def submit_scorecard(self, org_id: str, interview_id: str, body: Doc, by: str) -> Doc:
         """The interviewer's scorecard for a round run by a person. It becomes the round's report."""

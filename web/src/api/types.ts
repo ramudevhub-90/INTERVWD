@@ -324,3 +324,15 @@ export interface OrgSettings {
   slug: string; // the company's name in invite links: intervwd.com/<slug>/<round>
   locked: boolean; // the demo company can't rename its links
 }
+
+/** A seat in an interview's video call (Amazon Chime SDK meeting + this person's attendee). */
+export interface CallJoin {
+  meeting: unknown;
+  attendee: unknown;
+  candidateName: string;
+  candidateId: string;
+  jobTitle: string;
+  roundName: string;
+  orgName: string;
+  interviewers: string[];
+}

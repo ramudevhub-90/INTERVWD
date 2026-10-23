@@ -19,6 +19,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
+from . import calls as calls_mod
 from . import knowledge as knowledge_mod
 from . import nova as nova_mod
 from . import seed
@@ -90,14 +91,15 @@ def base_url(scope: Any) -> str:
 
 def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | None = None, nova: nova_mod.Nova | None = None,
                mailer: Mailer | None = None, demo_code: str | None = None, kb: knowledge_mod.Knowledge | None = None,
-               faces: FaceMatcher | None = None) -> Starlette:
+               faces: FaceMatcher | None = None, calls: calls_mod.Calls | None = None) -> Starlette:
     if store is None or blobs is None:
         env_store, env_blobs = store_mod.from_env()
         store, blobs = store or env_store, blobs or env_blobs
     nova = nova or nova_mod.from_env()
     mailer = mailer or Mailer()
     faces = faces or (RekognitionMatcher() if os.environ.get("ORIGIN_SECRET") else FakeMatcher())
-    svc = Service(store, blobs, nova, os.environ.get("APP_URL", "https://intervwd.com"), mailer, kb or knowledge_mod.from_env(), faces)
+    svc = Service(store, blobs, nova, os.environ.get("APP_URL", "https://intervwd.com"), mailer, kb or knowledge_mod.from_env(), faces,
+                  calls or calls_mod.from_env())
     auth = Auth(store, mailer, demo_code, slugs=svc.claim_slug)
     assistant = Assistant(svc, nova)
     mcp = create_server(svc)
@@ -310,6 +312,14 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
             raise Problem("That photo doesn't exist.", 404)
         data, kind = svc.face_image(c["orgId"], c["id"], request.path_params["which"])
         return Response(data, media_type=kind, headers={"Cache-Control": "private, no-store"})
+
+    @route("/api/interviews/{interview_id}/call", ["POST"])
+    async def call_candidate(request: Request) -> Doc:
+        return svc.join_call(request.path_params["interview_id"], "candidate")
+
+    @route("/api/interviews/{interview_id}/call/host", ["POST"], recruiter=True)
+    async def call_host(request: Request, s: Doc) -> Doc:
+        return svc.join_call(request.path_params["interview_id"], f"host-{s['userId']}"[:64], s["orgId"])
 
     @route("/api/interviews/{interview_id}/scorecard", ["POST"], recruiter=True)
     async def scorecard(request: Request, s: Doc) -> Doc:

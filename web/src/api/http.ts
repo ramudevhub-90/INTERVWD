@@ -171,6 +171,14 @@ export class HttpApi implements Api {
     await call('POST', `/interviews/${encodeURIComponent(interviewId)}/scorecard`, card);
   }
 
+  joinCall(interviewId: string) {
+    return call<import('./types').CallJoin>('POST', `/interviews/${encodeURIComponent(interviewId)}/call`);
+  }
+
+  hostCall(interviewId: string) {
+    return call<import('./types').CallJoin>('POST', `/interviews/${encodeURIComponent(interviewId)}/call/host`);
+  }
+
   verifyIdentity(interviewId: string, image: Blob) {
     const form = new FormData();
     form.set('image', image, 'live.jpg');

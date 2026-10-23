@@ -77,20 +77,42 @@ class Mailer:
             self._client = boto3.client("sesv2")
         return self._client
 
-    def send(self, to: str, subject: str, text: str) -> bool:
+    def send(self, to: str, subject: str, text: str, invite: str | None = None) -> bool:
+        """`invite` is an iCalendar REQUEST; mail clients show it as a calendar invite."""
         if not self.sender:
-            log.info("Email to %s: %s\n%s", to, subject, text)
+            log.info("Email to %s: %s\n%s%s", to, subject, text, "\n[calendar invite attached]" if invite else "")
             return True
         try:
-            self._ses().send_email(
-                FromEmailAddress=self.sender,
-                Destination={"ToAddresses": [to]},
-                Content={"Simple": {"Subject": {"Data": subject}, "Body": {"Text": {"Data": text}}}},
-            )
+            if invite:
+                self._ses().send_email(FromEmailAddress=self.sender, Destination={"ToAddresses": [to]},
+                                       Content={"Raw": {"Data": _with_invite(self.sender, to, subject, text, invite)}})
+            else:
+                self._ses().send_email(
+                    FromEmailAddress=self.sender,
+                    Destination={"ToAddresses": [to]},
+                    Content={"Simple": {"Subject": {"Data": subject}, "Body": {"Text": {"Data": text}}}},
+                )
             return True
         except Exception:
             log.exception("Couldn't email %s", to)
             return False
+
+
+def _with_invite(sender: str, to: str, subject: str, text: str, invite: str) -> bytes:
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"], msg["From"], msg["To"] = subject, sender, to
+    body = MIMEMultipart("alternative")
+    body.attach(MIMEText(text, "plain", "utf-8"))
+    body.attach(MIMEText(invite, "calendar;method=REQUEST", "utf-8"))  # shown inline as an invite
+    msg.attach(body)
+    part = MIMEText(invite, "calendar", "utf-8")
+    part.set_param("method", "REQUEST")
+    part.add_header("Content-Disposition", "attachment", filename="invite.ics")
+    msg.attach(part)
+    return msg.as_bytes()
 
 
 class Auth:

@@ -445,6 +445,14 @@ export class MockApi implements Api {
     this.save();
   }
 
+  async joinCall(): Promise<import('./types').CallJoin> {
+    throw new ApiError('Video calls need the live server (Amazon Chime SDK).', 409);
+  }
+
+  async hostCall(): Promise<import('./types').CallJoin> {
+    throw new ApiError('Video calls need the live server (Amazon Chime SDK).', 409);
+  }
+
   async verifyIdentity(interviewId: string): Promise<VerifyResult> {
     await pause(600);
     const iv = this.find(this.db.interviews, interviewId, 'interview');

@@ -23,9 +23,12 @@ class Outbox(Mailer):
     def __init__(self) -> None:
         super().__init__(sender="test@intervwd.com")
         self.sent: list[tuple[str, str, str]] = []
+        self.invites: list[tuple[str, str]] = []
 
-    def send(self, to: str, subject: str, text: str) -> bool:
+    def send(self, to: str, subject: str, text: str, invite: str | None = None) -> bool:
         self.sent.append((to, subject, text))
+        if invite:
+            self.invites.append((to, invite))
         return True
 
 
@@ -475,6 +478,10 @@ def test_ai_then_human_round(env):
     iv2 = r.json()["interviewId"]
     assert any("meet.example.com/abc" in m[2] for m in outbox.sent if m[0] == "kiran@example.com")
     assert any(m[0] == "dana@northwind.test" and f"/app/candidates/{cid}" in m[2] for m in outbox.sent)
+    # Both get calendar invites for the slot.
+    inv_for = {to: ics for to, ics in outbox.invites}
+    assert "METHOD:REQUEST" in inv_for["kiran@example.com"] and "meet.example.com/abc" in inv_for["kiran@example.com"]
+    assert "BEGIN:VEVENT" in inv_for["dana@northwind.test"] and f"UID:{iv2}@intervwd.com" in inv_for["dana@northwind.test"]
     room = client.get(f"/api/interviews/{iv2}").json()
     assert room["mode"] == "human" and room["interviewers"] == ["Dana Lee"]
     assert client.post(f"/api/interviews/{iv2}/start").status_code == 409
@@ -489,3 +496,20 @@ def test_ai_then_human_round(env):
     view = client.get(f"/api/candidates/{cid}", headers=h).json()
     assert view["candidate"]["status"] == "completed" and len(view["interviews"]) == 2
     assert client.post(f"/api/interviews/{iv1}/scorecard", headers=h, json={}).status_code == 409  # AI rounds score themselves
+
+
+def test_built_in_video_call(env):
+    client, outbox = env
+    h = demo_login(client)
+    svc = client.app.state.svc
+    # The demo's Round 2 is person-run without a pasted link, so Intervwd hosts the call.
+    slot = open_slot(client, h, "round_backend_2")
+    iv = book(client, "northwind-labs~backend-engineer-r2", slot, photo=False).json()["interviewId"]
+    joined = client.post(f"/api/interviews/{iv}/call").json()
+    host = client.post(f"/api/interviews/{iv}/call/host", headers=h).json()
+    assert joined["meeting"]["MeetingId"] == host["meeting"]["MeetingId"]  # same room
+    assert joined["attendee"]["AttendeeId"] != host["attendee"]["AttendeeId"]
+    assert client.post(f"/api/interviews/{iv}/call/host").status_code == 401  # hosts must sign in
+    assert any(f"/interview/{iv}" in m[2] for m in outbox.sent if m[0] == "kiran@example.com")  # candidate's join link
+    ai_iv = book(client, "nw-backend-r1", open_slot(client, h, "round_backend_1")).json()["interviewId"]
+    assert client.post(f"/api/interviews/{ai_iv}/call").status_code == 409  # AI rounds have no call

@@ -145,6 +145,10 @@ export class IntervwdStack extends cdk.Stack {
       server.addToRolePolicy(new iam.PolicyStatement({ actions: ['sts:AssumeRole'], resources: [props.sesRoleArn] }));
     }
     server.addToRolePolicy(new iam.PolicyStatement({ actions: ['polly:SynthesizeSpeech'], resources: ['*'] }));
+    // Video calls for person-run rounds (Amazon Chime SDK meetings; nothing is recorded).
+    server.addToRolePolicy(
+      new iam.PolicyStatement({ actions: ['chime:CreateMeeting', 'chime:GetMeeting', 'chime:CreateAttendee', 'chime:DeleteMeeting'], resources: ['*'] }),
+    );
     // Identity check: one-to-one face comparison only (no collections, nothing stored by Rekognition).
     server.addToRolePolicy(new iam.PolicyStatement({ actions: ['rekognition:CompareFaces'], resources: ['*'] }));
     server.addToRolePolicy(

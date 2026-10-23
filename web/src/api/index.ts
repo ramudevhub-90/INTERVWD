@@ -1,5 +1,6 @@
 import type {
   AssistantReply,
+  CallJoin,
   CandidateView,
   DashboardView,
   DecisionAction,
@@ -53,12 +54,14 @@ export interface Api {
   reviewSignup(candidateId: string, approve: boolean): Promise<void>;
   approveIdentity(candidateId: string): Promise<void>;
   submitScorecard(interviewId: string, card: Scorecard): Promise<void>;
+  hostCall(interviewId: string): Promise<CallJoin>;
   assistant(message: string): Promise<AssistantReply>;
 
   // Candidate
   invite(code: string, token?: string): Promise<InviteView>;
   join(code: string, input: JoinInput): Promise<JoinResult>;
   verifyIdentity(interviewId: string, image: Blob): Promise<VerifyResult>;
+  joinCall(interviewId: string): Promise<CallJoin>;
   room(interviewId: string): Promise<InterviewRoomView>;
   startInterview(interviewId: string): Promise<InterviewStep>;
   answer(interviewId: string, text: string): Promise<InterviewStep>;

@@ -218,7 +218,7 @@ export function InterviewRoom() {
               ? <p className="muted small" style={{ marginTop: 12 }}>This interview is done. The team will email you about next steps.</p>
               : data.meetingUrl
                 ? <a className="btn btn-primary btn-block" style={{ marginTop: 14 }} href={data.meetingUrl} target="_blank" rel="noreferrer">Join the video call</a>
-                : <p className="muted small" style={{ marginTop: 12 }}>The team will send you the video call link before the interview.</p>}
+                : <Link className="btn btn-primary btn-block" style={{ marginTop: 14 }} to={`/call/${id}`}><Icon name="camera" /> Join the video call</Link>}
           </div>
         </div>
       </>
