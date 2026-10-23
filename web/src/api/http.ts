@@ -127,6 +127,10 @@ export class HttpApi implements Api {
     return call<{ room: string; orgName: string; interviewId: string | null; firstName?: string }>('GET', `/kiosk/${encodeURIComponent(token)}/room/${encodeURIComponent(room)}`);
   }
 
+  reports(days: number) {
+    return call<import('./types').ReportsView>('GET', `/reports?days=${days}`);
+  }
+
   dashboard() {
     return call<import('./types').DashboardView>('GET', '/dashboard');
   }

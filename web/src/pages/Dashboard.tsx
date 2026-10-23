@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { Icon } from '../components/Icon';
 import { PageHead } from '../components/Shell';
+import { Bars } from './Reports';
 import { Loading, ScoreBadge, initials, useAuth, useLoad, when } from '../lib/util';
 
 export function Dashboard() {
@@ -24,6 +25,20 @@ export function Dashboard() {
         <div className="stat"><span className="faint">Waiting for your decision</span><b>{data.stats.awaitingDecision}</b></div>
         <div className="stat"><span className="faint">Candidates</span><b>{data.stats.candidates}</b></div>
       </div>
+
+      {data.week && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head"><h2>This week</h2><Link className="btn btn-sm btn-ghost" to="/app/reports"><Icon name="chart" size={14} /> All reports</Link></div>
+          <div className="wk">
+            <div className={`stat ${data.week.liveNow ? 'wk-live' : ''}`}><span className="faint">Interviewing now</span><b>{data.week.liveNow}</b></div>
+            <div className="stat"><span className="faint">Completed</span><b>{data.week.completed}</b></div>
+            <div className="stat"><span className="faint">Average score</span><b>{data.week.avgScore == null ? '–' : data.week.avgScore.toFixed(1)}</b></div>
+            <div className="stat"><span className="faint">Fast-tracked by AI</span><b>{data.week.fastTracked}</b></div>
+            <div className="stat"><span className="faint">Time to decision</span><b>{data.week.avgDecisionHours == null ? '–' : data.week.avgDecisionHours < 1 ? `${Math.round(data.week.avgDecisionHours * 60)}m` : `${data.week.avgDecisionHours.toFixed(1)}h`}</b></div>
+            <div className="stat"><span className="faint">Interviews per day</span><Bars data={data.week.daily} height={44} label={((d: { date: string }) => new Date(`${d.date}T12:00:00`).toLocaleDateString([], { weekday: 'narrow' })) as never} /></div>
+          </div>
+        </div>
+      )}
 
       {day.data && day.data.rows.length > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>

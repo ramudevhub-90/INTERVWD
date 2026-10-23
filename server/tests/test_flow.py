@@ -751,3 +751,21 @@ def test_ai_rounds_can_start_straight_away(env):
         r = client.post(f"/api/invites/{code}/join", data={"name": "B B", "email": "b@example.com", "slotId": "now", "consent": "true"},
                         files={"cv": ("cv.txt", b"B. Python.", "text/plain")})
         assert r.status_code == 400
+
+
+def test_reports_and_weekly_dashboard(env):
+    client, _ = env
+    h = demo_login(client)
+    svc, iv, _ = run_interview(client, h, decision_mode="assist", rounds=1)
+    client.post(f"/api/candidates/{iv['candidateId']}/decision", headers=h, json={"action": "hold", "note": ""})
+    for days in (7, 30, 0):
+        r = client.get(f"/api/reports?days={days}", headers=h)
+        assert r.status_code == 200, r.text
+        rep = r.json()
+        assert rep["totals"]["completed"] >= 1 and rep["funnel"][0]["count"] >= rep["funnel"][-1]["count"]
+        assert sum(b["count"] for b in rep["scores"]) == rep["totals"]["completed"]
+        assert len(rep["daily"]) == 14 and any(j["title"] == "Support Lead" for j in rep["jobs"])
+    assert client.get("/api/reports", headers=h).json()["periodDays"] == 30
+    assert client.get("/api/reports").status_code == 401  # recruiters only
+    week = client.get("/api/dashboard", headers=h).json()["week"]
+    assert week["completed"] >= 1 and len(week["daily"]) == 7

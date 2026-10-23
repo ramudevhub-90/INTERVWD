@@ -36,6 +36,7 @@ export function Shell() {
         <Brand to="/app" />
         <NavLink to="/app" end className="nav-link"><Icon name="home" /><span>Dashboard</span></NavLink>
         <NavLink to="/app/jobs" className="nav-link"><Icon name="briefcase" /><span>Jobs</span></NavLink>
+        <NavLink to="/app/reports" className="nav-link"><Icon name="chart" /><span>Reports</span></NavLink>
         <NavLink to="/app/alexa" className="nav-link"><Icon name="alexa" /><span>Alexa+</span></NavLink>
         <NavLink to="/app/settings" className="nav-link"><Icon name="link" /><span>Settings</span></NavLink>
         <div className="foot row">

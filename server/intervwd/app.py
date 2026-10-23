@@ -381,6 +381,11 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
         out = svc.decide(s["orgId"], request.path_params["candidate_id"], str(d.get("action", "")), str(d.get("note", "")), s["name"])
         return {"ok": True, "status": out["candidate"]["status"]}
 
+    @route("/api/reports", ["GET"], recruiter=True)
+    async def reports_(request: Request, s: Doc) -> Any:
+        days = request.query_params.get("days", "30")
+        return svc.reports(s["orgId"], int(days) if days.isdigit() else 30)
+
     @route("/api/assistant", ["POST"], recruiter=True)
     async def assistant_(request: Request, s: Doc) -> Doc:
         return assistant.reply(s, str((await body(request)).get("message", "")), tz(request))

@@ -262,6 +262,52 @@ export class MockApi implements Api {
       }),
       upcoming,
       awaiting,
+      week: { liveNow: ivs.filter((i) => i.status === 'in_progress').length, completed: ivs.filter((i) => i.status === 'completed').length,
+        avgScore: 3.8, fastTracked: 1, advanced: 1, avgDecisionHours: 5.4, aiAgreement: 0.86,
+        daily: Array.from({ length: 7 }, (_, k) => ({ date: new Date(Date.now() - (6 - k) * 864e5).toISOString().slice(0, 10), count: [1, 0, 2, 3, 1, 2, 1][k] })) },
+    };
+  }
+
+  /** The Reports page from the sample data (the server computes the real one). */
+  async reports(days: number): Promise<import('./types').ReportsView> {
+    await pause();
+    const { orgId } = this.recruiter();
+    const since = days > 0 ? Date.now() - days * 864e5 : 0;
+    const jobs = this.db.jobs.filter((j) => j.orgId === orgId);
+    const ivs = this.db.interviews.filter((i) => i.orgId === orgId && new Date(i.slotStart).getTime() >= since);
+    const cands = this.db.candidates.filter((c) => c.orgId === orgId);
+    const done = ivs.filter((i) => i.status === 'completed');
+    const overall = done.map((i) => i.report?.overall).filter((x): x is number => typeof x === 'number');
+    const avg = (xs: number[]) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 100) / 100 : null);
+    const buckets: [number, number][] = [[1, 2], [2, 2.5], [2.5, 3], [3, 3.5], [3.5, 4], [4, 4.5], [4.5, 5.01]];
+    const crit: Record<string, number[]> = {};
+    for (const i of done) for (const c of i.report?.criteria ?? []) (crit[c.name] ??= []).push(c.score);
+    const daily = Array.from({ length: 14 }, (_, k) => {
+      const d = new Date(Date.now() - (13 - k) * 864e5).toISOString().slice(0, 10);
+      return { date: d, count: done.filter((i) => (i.endedAt ?? i.slotStart).slice(0, 10) === d).length };
+    });
+    const status = (s: string) => cands.filter((c) => c.status === s).length;
+    return {
+      periodDays: days,
+      totals: { candidates: cands.length, interviews: ivs.length, completed: done.length, completionRate: ivs.length ? Math.round((done.length / ivs.length) * 100) / 100 : null,
+        avgScore: avg(overall), advanced: status('advanced'), rejected: status('rejected'), onHold: status('on_hold'), autoAdvanced: 1, awaiting: status('completed'),
+        avgDecisionHours: 5.4, avgInterviewMin: 17.5, aiAgreement: 0.86, aiAgreementOf: 7, takeovers: 1, teamQuestions: 2 },
+      funnel: [{ label: 'Applied or invited', count: cands.length }, { label: 'Booked', count: cands.filter((c) => c.status !== 'invited').length },
+        { label: 'Interviewed', count: new Set(done.map((i) => i.candidateId)).size }, { label: 'Moved on', count: status('advanced') }],
+      triage: { fastTrack: overall.filter((x) => x >= 4).length, review: overall.filter((x) => x >= 3 && x < 4).length, below: overall.filter((x) => x < 3).length },
+      reasons: [{ label: 'Close to the bar', count: 2 }, { label: 'Mixed scores across skills', count: 1 }, { label: 'Too little to go on', count: 1 }],
+      scores: buckets.map(([lo, hi]) => ({ label: `${lo}–${Math.min(hi, 5)}`, count: overall.filter((x) => x >= lo && x < hi).length })),
+      daily,
+      jobs: jobs.map((j) => {
+        const jd = done.filter((i) => i.jobId === j.id);
+        const jc = cands.filter((c) => c.jobId === j.id);
+        return { id: j.id, title: j.title, candidates: jc.length, interviewed: jd.length, avgScore: avg(jd.map((i) => i.report?.overall ?? 0).filter(Boolean)),
+          advanced: jc.filter((c) => c.status === 'advanced').length, awaiting: jc.filter((c) => c.status === 'completed').length };
+      }),
+      criteria: Object.entries(crit).map(([name, v]) => ({ name, avg: avg(v), n: v.length })).sort((a, b) => b.n - a.n).slice(0, 8),
+      identity: { checked: 4, matched: 3, approvedByPerson: 1, locked: 0 },
+      sources: { signedUp: cands.filter((c) => !(c as { addedBy?: string }).addedBy).length, addedByTeam: cands.filter((c) => (c as { addedBy?: string }).addedBy).length },
+      modes: { ai: ivs.length, human: 0, office: 0 },
     };
   }
 

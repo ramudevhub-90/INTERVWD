@@ -270,12 +270,27 @@ class Service:
                 "candidates": len(cands),
                 "pendingApproval": len(pending),
             },
+            "week": self._week(org_id, ivs),
             "pending": pending,
             "identityLocked": locked,
             "jobs": job_rows,
             "upcoming": upcoming,
             "awaiting": awaiting,
         }
+
+    def _week(self, org_id: str, ivs: list[Doc]) -> Doc:
+        """The last 7 days at a glance, for the dashboard (the Reports page has the detail)."""
+        from . import reports
+
+        t = reports.build(self, org_id, 7)
+        return {"liveNow": sum(1 for iv in ivs if iv["status"] == "in_progress"), "completed": t["totals"]["completed"],
+                "avgScore": t["totals"]["avgScore"], "fastTracked": t["triage"]["fastTrack"], "advanced": t["totals"]["advanced"],
+                "avgDecisionHours": t["totals"]["avgDecisionHours"], "aiAgreement": t["totals"]["aiAgreement"], "daily": t["daily"][-7:]}
+
+    def reports(self, org_id: str, days: int = 30) -> Doc:
+        from . import reports
+
+        return reports.build(self, org_id, days)
 
     def create_job(self, org_id: str, title: str, location: str, description: str) -> str:
         if len(title.strip()) < 2:

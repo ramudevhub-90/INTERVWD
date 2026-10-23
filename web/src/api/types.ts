@@ -185,6 +185,34 @@ export interface DashboardView {
   awaiting: { interview: Interview; candidate: Candidate; job: Job; round: Round }[];
   pending?: { candidate: Candidate; job: Job; round: Round }[];
   identityLocked?: { interview: Interview; candidate: Candidate; job: Job; round: Round }[];
+  week?: WeekStats;
+}
+
+export interface DayCount { date: string; count: number }
+
+export interface WeekStats {
+  liveNow: number; completed: number; avgScore: number | null; fastTracked: number; advanced: number;
+  avgDecisionHours: number | null; aiAgreement: number | null; daily: DayCount[];
+}
+
+export interface ReportsView {
+  periodDays: number;
+  totals: {
+    candidates: number; interviews: number; completed: number; completionRate: number | null; avgScore: number | null;
+    advanced: number; rejected: number; onHold: number; autoAdvanced: number; awaiting: number;
+    avgDecisionHours: number | null; avgInterviewMin: number | null; aiAgreement: number | null; aiAgreementOf: number;
+    takeovers: number; teamQuestions: number;
+  };
+  funnel: { label: string; count: number }[];
+  triage: { fastTrack: number; review: number; below: number };
+  reasons: { label: string; count: number }[];
+  scores: { label: string; count: number }[];
+  daily: DayCount[];
+  jobs: { id: string; title: string; candidates: number; interviewed: number; avgScore: number | null; advanced: number; awaiting: number }[];
+  criteria: { name: string; avg: number | null; n: number }[];
+  identity: { checked: number; matched: number; approvedByPerson: number; locked: number };
+  sources: { signedUp: number; addedByTeam: number };
+  modes: { ai: number; human: number; office: number };
 }
 
 export interface JobView {

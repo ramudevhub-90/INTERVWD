@@ -42,6 +42,7 @@ export interface Api {
 
   // Recruiter
   dashboard(): Promise<DashboardView>;
+  reports(days: number): Promise<import('./types').ReportsView>;
   settings(): Promise<OrgSettings>;
   saveSettings(slug: string): Promise<OrgSettings>;
   saveOffice(address: string, rooms: string[]): Promise<OrgSettings>;
