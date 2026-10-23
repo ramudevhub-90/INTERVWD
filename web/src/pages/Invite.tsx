@@ -15,13 +15,23 @@ const MAX_PHOTO = 5 * 1024 * 1024;
 function SelfieCamera({ onPhoto, onClose }: { onPhoto: (f: File) => void; onClose: () => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const [err, setErr] = useState<string>();
+  const stream = useRef<MediaStream>();
+  // Called from a tap as well as on open: Safari only re-asks for the camera from a user gesture.
+  const start = () => {
+    setErr(undefined);
+    if (!navigator.mediaDevices?.getUserMedia) return setErr('This browser can’t use the camera here. Upload a photo instead.');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false }).then((s) => {
+      stream.current?.getTracks().forEach((t) => t.stop());
+      stream.current = s;
+      if (video.current) {
+        video.current.srcObject = s;
+        video.current.play().catch(() => undefined);
+      }
+    }).catch((e) => setErr(`${cameraProblem(e)} (${(e as Error).name || 'error'}) Or upload a photo instead.`));
+  };
   useEffect(() => {
-    let stream: MediaStream | undefined;
-    navigator.mediaDevices?.getUserMedia({ video: { width: 640, height: 480 } }).then((s) => {
-      stream = s;
-      if (video.current) video.current.srcObject = s;
-    }).catch((e) => setErr(`${cameraProblem(e)} Or upload a photo instead.`));
-    return () => stream?.getTracks().forEach((t) => t.stop());
+    start();
+    return () => stream.current?.getTracks().forEach((t) => t.stop());
   }, []);
   const take = () => {
     const v = video.current;
@@ -36,7 +46,8 @@ function SelfieCamera({ onPhoto, onClose }: { onPhoto: (f: File) => void; onClos
     <div className="stack" style={{ gap: 8, marginTop: 8 }}>
       <video ref={video} autoPlay muted playsInline style={{ width: '100%', borderRadius: 10, background: '#000', transform: 'scaleX(-1)' }} />
       {err && <p className="error" style={{ marginTop: 0 }}>{err}</p>}
-      <div className="row"><button type="button" className="btn btn-primary btn-sm" onClick={take}><Icon name="camera" size={15} /> Take photo</button><button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button></div>
+      <div className="row">{err ? <button type="button" className="btn btn-primary btn-sm" onClick={start}><Icon name="camera" size={15} /> Turn on camera</button>
+        : <button type="button" className="btn btn-primary btn-sm" onClick={take}><Icon name="camera" size={15} /> Take photo</button>}<button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button></div>
       <p className="faint">Face the light and look at the camera, like a passport photo.</p>
     </div>
   );
