@@ -196,6 +196,17 @@ export function JobDetail() {
       <PageHead title={job.title} sub={`${job.location} · ${job.description}`} crumbs={[{ to: '/app/jobs', label: 'Jobs' }]}>
         <Link className="btn btn-primary" to={`/app/jobs/${job.id}/rounds/new`}><Icon name="plus" /> Add round</Link>
       </PageHead>
+      {data.progress && (
+        <div className="card row wrap" style={{ marginBottom: 16, gap: 18, alignItems: 'center' }}>
+          <div className="stat" style={{ padding: '10px 16px' }}><span className="faint">Positions filled</span><b>{data.progress.hired} of {data.progress.openings}</b></div>
+          <span className="meter" style={{ maxWidth: 260 }}><i style={{ width: `${Math.min(100, (data.progress.hired / data.progress.openings) * 100)}%`, background: 'var(--success)' }} /></span>
+          <span className="small">{data.progress.hiredNames.length ? <>Hired: <b>{data.progress.hiredNames.join(', ')}</b></> : <span className="faint">Nobody hired yet</span>}</span>
+          <label className="row small" style={{ marginLeft: 'auto', gap: 8 }}>Openings
+            <input type="number" min={1} max={500} defaultValue={data.progress.openings} style={{ width: 80 }}
+              onBlur={async (e) => { const n = Math.max(1, Number(e.target.value) || 1); if (n !== data.progress!.openings) { await api.setOpenings(job.id, n); reload(); } }} />
+          </label>
+        </div>
+      )}
 
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'candidates'} className={tab === 'candidates' ? 'on' : ''} onClick={() => setParams({ tab: 'candidates' })}>Candidates ({candidates.length})</button>

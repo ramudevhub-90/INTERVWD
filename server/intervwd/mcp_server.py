@@ -124,6 +124,12 @@ def create_server(svc: Service) -> MCPServer:
         first and read back the result; call with confirm=true only after the recruiter says yes."""
         return call(tools.decide, candidate_name, "advance", confirm, note)
 
+    @mcp.tool(title="Hire a candidate", annotations=CHANGE)
+    def hire_candidate(candidate_name: str, confirm: bool = False, note: str = "") -> dict[str, Any]:
+        """Hire a candidate for their job and email them the offer. Call with confirm=false first and read back;
+        confirm=true only after the recruiter says yes."""
+        return call(tools.decide, candidate_name, "hire", confirm, note)
+
     @mcp.tool(title="Put a candidate on hold", annotations=CHANGE)
     def hold_candidate(candidate_name: str, confirm: bool = False, note: str = "") -> dict[str, Any]:
         """Put a candidate on hold. confirm=false reads back; confirm=true after the recruiter says yes."""

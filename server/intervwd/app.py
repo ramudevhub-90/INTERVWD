@@ -246,7 +246,15 @@ def create_app(store: store_mod.Store | None = None, blobs: store_mod.Blobs | No
     @route("/api/jobs", ["POST"], recruiter=True)
     async def create_job(request: Request, s: Doc) -> Doc:
         d = await body(request)
-        return {"id": svc.create_job(s["orgId"], str(d.get("title", "")), str(d.get("location", "")), str(d.get("description", "")))}
+        openings = d.get("openings", 1)
+        return {"id": svc.create_job(s["orgId"], str(d.get("title", "")), str(d.get("location", "")), str(d.get("description", "")),
+                                     int(openings) if str(openings).isdigit() else 1)}
+
+    @route("/api/jobs/{job_id}/openings", ["POST"], recruiter=True)
+    async def set_openings(request: Request, s: Doc) -> Doc:
+        d = await body(request)
+        n = d.get("openings", 1)
+        return svc.set_openings(s["orgId"], request.path_params["job_id"], int(n) if str(n).isdigit() else 1)
 
     @route("/api/jobs/{job_id}", ["GET"], recruiter=True)
     async def job(request: Request, s: Doc) -> Doc:

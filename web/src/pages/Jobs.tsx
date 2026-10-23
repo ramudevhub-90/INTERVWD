@@ -39,7 +39,7 @@ export function Jobs() {
 }
 
 export function NewJob() {
-  const [form, setForm] = useState({ title: '', location: '', description: '' });
+  const [form, setForm] = useState({ title: '', location: '', description: '', openings: 1 });
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -64,6 +64,7 @@ export function NewJob() {
       <form className="card" style={{ maxWidth: 640 }} onSubmit={submit} noValidate>
         <label className="field"><span>Job title</span><input value={form.title} onChange={(e) => { setForm({ ...form, title: e.target.value }); setError(undefined); }} placeholder="Backend Engineer" autoFocus /></label>
         <label className="field"><span>Location</span><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Bengaluru · Hybrid" /></label>
+        <label className="field"><span>Openings</span><input type="number" min={1} max={500} value={form.openings} onChange={(e) => setForm({ ...form, openings: Math.max(1, Number(e.target.value) || 1) })} style={{ maxWidth: 140 }} /><span className="faint small">How many people you're hiring for this role</span></label>
         <label className="field">
           <span>About the role</span>
           <textarea value={form.description} onChange={(e) => { setForm({ ...form, description: e.target.value }); setError(undefined); }} placeholder="Build and run the APIs behind our payments platform. Python, AWS, PostgreSQL." rows={4} />

@@ -297,15 +297,26 @@ class Service:
 
         return reports.build(self, org_id, days)
 
-    def create_job(self, org_id: str, title: str, location: str, description: str) -> str:
+    def create_job(self, org_id: str, title: str, location: str, description: str, openings: int = 1) -> str:
         if len(title.strip()) < 2:
             raise Problem("Enter a job title.")
         if len(description.strip()) < 20:
             raise Problem("Describe the role in a sentence or two. The interviewer uses it to shape questions.")
         job = {"id": new_id("job"), "orgId": org_id, "title": title.strip()[:120], "location": location.strip()[:120],
-               "description": description.strip()[:2000], "status": "open", "createdAt": engine.now()}
+               "description": description.strip()[:2000], "status": "open", "openings": max(1, min(500, int(openings or 1))), "createdAt": engine.now()}
         self.save_job(job)
         return job["id"]
+
+    def set_openings(self, org_id: str, job_id: str, openings: int) -> Doc:
+        """How many people this job is hiring; the job page, Reports and Alexa+ count hires against it."""
+        job = self._owned("job", job_id, org_id, "job")
+        job["openings"] = max(1, min(500, int(openings)))
+        self.save_job(job)
+        return job
+
+    def hiring_progress(self, job: Doc, cands: list[Doc]) -> Doc:
+        hired = [c["name"] for c in cands if c.get("status") == "hired"]
+        return {"openings": int(job.get("openings") or 1), "hired": len(hired), "hiredNames": hired}
 
     def job_view(self, org_id: str, job_id: str) -> Doc:
         job = self._owned("job", job_id, org_id, "job")
@@ -319,7 +330,7 @@ class Service:
             iv = latest.get(f"{c['id']}#{c['roundId']}")
             rows.append({**c, "overall": ((iv or {}).get("report") or {}).get("overall"), "roundName": names.get(c["roundId"], "")})
         rows.sort(key=lambda c: -(c["overall"] if c["overall"] is not None else -1))
-        return {"job": job, "rounds": rounds, "candidates": rows}
+        return {"job": job, "rounds": rounds, "candidates": rows, "progress": self.hiring_progress(job, rows)}
 
     def create_round(self, org_id: str, job_id: str, body: Doc) -> Doc:
         job = self._owned("job", job_id, org_id, "job")
@@ -430,18 +441,18 @@ class Service:
         }
 
     def decide(self, org_id: str, candidate_id: str, action: str, note: str, by: str, automatic: bool = False) -> Doc:
-        if action not in ("advance", "hold", "reject"):
-            raise Problem("Choose advance, hold or reject.")
+        if action not in ("advance", "hold", "reject", "hire"):
+            raise Problem("Choose advance, hold, reject or hire.")
         if automatic and action != "advance":
-            raise Problem("Only a person can hold or reject a candidate.", 403)
+            raise Problem("Only a person can hire, hold or reject a candidate.", 403)
         c = self._owned("candidate", candidate_id, org_id, "candidate")
-        if c["status"] not in ("completed", "on_hold"):
+        if c["status"] not in ("completed", "on_hold") and not (action == "hire" and c["status"] in ("advanced", "invited", "scheduled")):
             raise Problem(f"{c['name']} has no finished interview waiting for a decision.", 409)
         d = {"id": new_id("d"), "candidateId": candidate_id, "roundId": c["roundId"], "action": action, "note": note.strip()[:1000], "by": by,
              "at": engine.now(), **({"automatic": True} if automatic else {})}
         self.store.put("decision", d["id"], d, index=(f"candidate#{candidate_id}#decisions", d["at"]))
-        nxt = self.next_round(c)
-        c["status"] = {"advance": "advanced", "hold": "on_hold", "reject": "rejected"}[action]
+        nxt = None if action == "hire" else self.next_round(c)
+        c["status"] = {"advance": "advanced", "hold": "on_hold", "reject": "rejected", "hire": "hired"}[action]
         token = None
         if action == "advance" and nxt:
             # Same candidate, next round: a personal link keeps their profile (CV, photo) and skips approval.
@@ -449,7 +460,7 @@ class Service:
             self.store.put("candidate-invite", token, {"candidateId": c["id"]})
             c.update(roundId=nxt["id"], status="invited", roundsPassed=[*c.get("roundsPassed", []), d["roundId"]])
         self.save_candidate(c)
-        if action == "reject" or (action == "advance" and not nxt):
+        if action in ("reject", "hire") or (action == "advance" and not nxt):
             self._purge_faces(c, [i for i in self.interviews(org_id) if i["candidateId"] == candidate_id])  # final decision
         if token and nxt:
             org, job = self.org(org_id), self._get("job", c["jobId"], "job")
@@ -457,6 +468,11 @@ class Service:
                         f"Hi {c['name'].split()[0]},\n\nGood news: {org['name']} would like you to take the next step for {job['title']}, "
                         f"{nxt['name']}.\n\nPick a time here (your profile is already filled in): {self.invite_url(nxt)}?t={token}\n\n"
                         f"Intervwd, on behalf of {org['name']}")
+        if action == "hire":
+            org, job = self.org(org_id), self._get("job", c["jobId"], "job")
+            self._email(c["email"], f"{org['name']}: an offer for {job['title']}",
+                        f"Hi {c['name'].split()[0]},\n\nCongratulations: {org['name']} would like to offer you the {job['title']} role. "
+                        f"Someone from the team will be in touch with the details.\n\nIntervwd, on behalf of {org['name']}")
         return {"decision": d, "candidate": c, "nextRound": nxt}
 
     def next_round(self, c: Doc) -> Doc | None:

@@ -55,6 +55,7 @@ export interface Api {
   kioskArrive(token: string, interviewId: string): Promise<{ room: string | null; message: string }>;
   kioskRoom(token: string, room: string): Promise<{ room: string; orgName: string; interviewId: string | null; firstName?: string }>;
   createJob(input: NewJob): Promise<string>;
+  setOpenings(jobId: string, openings: number): Promise<unknown>;
   job(jobId: string): Promise<JobView>;
   createRound(jobId: string, input: NewRound): Promise<Round>;
   addSlots(roundId: string, starts: string[]): Promise<Round>;

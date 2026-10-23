@@ -26,6 +26,7 @@ export const STATUS: Record<CandidateStatus, { label: string; tone: string }> = 
   in_progress: { label: 'In interview', tone: 'badge-accent' },
   completed: { label: 'Needs decision', tone: 'badge-warning' },
   advanced: { label: 'Moved on', tone: 'badge-success' },
+  hired: { label: 'Hired', tone: 'badge-success' },
   on_hold: { label: 'On hold', tone: '' },
   rejected: { label: 'Not progressing', tone: 'badge-danger' },
 };

@@ -837,3 +837,26 @@ def test_job_status_by_voice(env):
     s = {"orgId": "org_northwind", "email": "demo@intervwd.com"}
     st = tools.job_status(svc, s, "Store Operations")
     assert st["job"] == "Store Operations Manager" and st["rounds"][0]["candidates"] >= 1
+
+
+def test_hiring_against_openings(env):
+    """A job has openings; a person hires (never the AI); the job, Reports and Alexa+ show positions filled."""
+    client, outbox = env
+    h = demo_login(client)
+    job = client.post("/api/jobs", headers=h, json={"title": "Night Shift Lead", "location": "", "description": "Run the night shift at our main warehouse.", "openings": 3}).json()["id"]
+    assert client.get(f"/api/jobs/{job}", headers=h).json()["progress"] == {"openings": 3, "hired": 0, "hiredNames": []}
+    assert client.post(f"/api/jobs/{job}/openings", headers=h, json={"openings": 2}).json()["openings"] == 2
+    svc = client.app.state.svc
+    # Rahul finished an interview: hire him by voice, with a yes
+    ask = client.post("/api/assistant", headers=h, json={"message": "Hire Rahul"}).json()
+    assert ask.get("pendingConfirmation") and "hire Rahul Mehta" in ask["text"]
+    done = client.post("/api/assistant", headers=h, json={"message": "yes"}).json()
+    assert "hired" in done["text"] and "of 2 positions filled" in done["text"]
+    assert svc.store.get("candidate", "cand_rahul")["status"] == "hired"
+    assert any("an offer for Backend Engineer" in m[1] for m in outbox.sent)
+    with pytest.raises(Exception):
+        svc.decide("org_northwind", "cand_ana", "hire", "", "Intervwd (automatic)", automatic=True)  # the AI never hires
+    st = client.post("/api/assistant", headers=h, json={"message": "How's the backend job going?"}).json()["text"]
+    assert "of 2 positions filled (Rahul Mehta)" in st
+    rep = client.get("/api/reports?days=0", headers=h).json()
+    assert rep["totals"]["hired"] >= 2 and any(j["hired"] >= 1 and j["openings"] == 2 for j in rep["jobs"] if j["title"] == "Backend Engineer")

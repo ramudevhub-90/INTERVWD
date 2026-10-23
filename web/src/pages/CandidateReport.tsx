@@ -307,6 +307,9 @@ export function CandidateReport() {
                   <button className="btn btn-sm" style={{ flex: 1 }} disabled={!!busy} onClick={() => decide('hold')}>Hold</button>
                   <button className="btn btn-sm btn-danger" style={{ flex: 1 }} disabled={!!busy} onClick={() => decide('reject')}>Don't progress</button>
                 </div>
+                <div className="row" style={{ marginTop: 8 }}>
+                  <button className="btn btn-sm btn-block" style={{ borderColor: 'var(--success)', color: 'var(--success)' }} disabled={!!busy} onClick={() => decide('hire')}><Icon name="check" size={14} /> {busy === 'hire' ? 'Saving…' : 'Hire and send the offer'}</button>
+                </div>
                 {next && <p className="faint" style={{ marginTop: 10 }}>Moving on emails {candidate.name.split(' ')[0]} the {next.name.split(' · ')[0]} booking link.</p>}
               </>
             ) : (

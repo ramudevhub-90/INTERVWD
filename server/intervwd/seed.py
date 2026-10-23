@@ -105,7 +105,8 @@ def reset_demo(svc: Service) -> None:
         {"id": "job_analyst", "title": "Data Analyst", "location": "Remote · India", "description": "Turn sales and supply data into decisions. SQL, dashboards, clear storytelling."},
     ]
     for i, j in enumerate(jobs):
-        svc.save_job({**j, "orgId": DEMO_ORG, "status": "open", "createdAt": _at(-24 * (20 - i * 5))})
+        svc.save_job({**j, "orgId": DEMO_ORG, "status": "open", "openings": {"job_backend": 2, "job_storeops": 3, "job_analyst": 1}[j["id"]],
+                      "createdAt": _at(-24 * (20 - i * 5))})
 
     def round_(rid: str, job: str, index: int, name: str, criteria: list[Doc], questions: list[str], code: str, slots: list[tuple[str, float, str | None]]) -> Doc:
         path = {"round_backend_1": "backend-engineer-r1", "round_backend_2": "backend-engineer-r2",
@@ -160,7 +161,7 @@ def reset_demo(svc: Service) -> None:
     cand("cand_vikram", "Vikram Rao", "job_backend", be1["id"], "scheduled", ["Django", "Celery", "MySQL"], "3 years in Django; built internal tools and a reporting API.")
     cand("cand_neha", "Neha Kapoor", "job_backend", be1["id"], "completed", ["Node.js", "Express", "MongoDB"], "2 years; mostly Node.js; some Python scripting.")
     cand("cand_meera", "Meera Iyer", "job_storeops", so1["id"], "scheduled", ["Retail operations", "Rostering", "Inventory"], "7 years in retail; assistant store manager at a grocery chain.")
-    cand("cand_arjun", "Arjun Nair", "job_storeops", so1["id"], "advanced", ["Team leadership", "Visual merchandising"], "5 years; led a 20-person store team.")
+    cand("cand_arjun", "Arjun Nair", "job_storeops", so1["id"], "hired", ["Team leadership", "Visual merchandising"], "5 years; led a 20-person store team.")
 
     q = be1["questions"]
 
@@ -209,7 +210,7 @@ def reset_demo(svc: Service) -> None:
     for cid in ("cand_rahul", "cand_ana", "cand_neha", "cand_vikram", "cand_meera"):
         for d in svc.decisions(cid):
             s.delete("decision", d["id"])
-    s.put("decision", "d_demo_arjun", {"id": "d_demo_arjun", "candidateId": "cand_arjun", "roundId": so1["id"], "action": "advance", "note": "Strong on people leadership.",
+    s.put("decision", "d_demo_arjun", {"id": "d_demo_arjun", "candidateId": "cand_arjun", "roundId": so1["id"], "action": "hire", "note": "Strong on people leadership. Offer made.",
                                        "by": "Priya Sharma", "at": _at(-24)}, index=("candidate#cand_arjun#decisions", _at(-24)))
 
 

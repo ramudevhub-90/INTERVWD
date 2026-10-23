@@ -63,9 +63,12 @@ def find_job(svc: Service, org_id: str, title: str | None) -> Doc:
 
 def list_jobs(svc: Service, s: Doc) -> Doc:
     jobs = [j for j in svc.jobs(s["orgId"]) if j["status"] == "open"]
-    rows = [{"title": j["title"], "location": j["location"], "candidates": len(svc.candidates(j["id"])),
-             "rounds": [r["name"] for r in svc.rounds(j["id"])]} for j in jobs]
-    say = f"You have {len(rows)} open roles: " + "; ".join(f"{r['title']} with {r['candidates']} candidates" for r in rows) + "." if rows else "You have no open roles."
+    rows = []
+    for j in jobs:
+        cs = svc.candidates(j["id"]); p = svc.hiring_progress(j, cs)
+        rows.append({"title": j["title"], "location": j["location"], "candidates": len(cs), "openings": p["openings"], "hired": p["hired"],
+                     "rounds": [r["name"] for r in svc.rounds(j["id"])]})
+    say = f"You have {len(rows)} open roles: " + "; ".join(f"{r['title']}, {r['hired']} of {r['openings']} filled, {r['candidates']} candidates" for r in rows) + "." if rows else "You have no open roles."
     return {"say": say, "jobs": rows}
 
 
@@ -134,7 +137,9 @@ def job_status(svc: Service, s: Doc, job_title: str, tz_offset_min: int = 0) -> 
                      key=lambda x: -(x[1] or 0))
     scores = [iv["report"]["overall"] for iv in ivs if (iv.get("report") or {}).get("overall") is not None]
     fast = sum(1 for c in cands for d in svc.decisions(c["id"]) if d.get("automatic"))
-    parts = [f"{job['title']}: {len(cands)} candidate{'s' if len(cands) != 1 else ''}."]
+    prog = svc.hiring_progress(job, cands)
+    parts = [f"{job['title']}: {prog['hired']} of {prog['openings']} position{'s' if prog['openings'] != 1 else ''} filled"
+             + (f" ({', '.join(prog['hiredNames'])})" if prog['hiredNames'] else "") + f", {len(cands)} candidate{'s' if len(cands) != 1 else ''}."]
     for pr in per_round:
         if pr["candidates"]:
             parts.append(f"{pr['round'].split(' · ')[0]}: " + ", ".join(f"{n} {k}" for k, n in pr["stages"].items()) + ".")
@@ -152,7 +157,7 @@ def job_status(svc: Service, s: Doc, job_title: str, tz_offset_min: int = 0) -> 
         parts.append(f"Next open slot: {_time(nxt['nextOpenSlot'], tz_offset_min)}.")
     elif rounds:
         parts.append("No open slots; AI rounds can still start straight away from the invite link.")
-    return {"say": " ".join(parts), "job": job["title"], "rounds": per_round, "interviewingNow": live,
+    return {"say": " ".join(parts), "job": job["title"], "openings": prog["openings"], "hired": prog["hiredNames"], "rounds": per_round, "interviewingNow": live,
             "waitingForDecision": [{"candidate": n, "score": sc} for n, sc in waiting], "averageScore": round(sum(scores) / len(scores), 2) if scores else None,
             "fastTracked": fast}
 
@@ -227,7 +232,8 @@ def add_interview_slots(svc: Service, s: Doc, job_title: str, starts: list[str],
     return {"say": f"Added {len(starts)} slot{'s' if len(starts) != 1 else ''} to {job['title']}, {r['name']}.", "added": len(starts)}
 
 
-_VERBS = {"advance": "move {name} to the next round", "hold": "put {name} on hold", "reject": "mark {name} as not progressing"}
+_VERBS = {"advance": "move {name} to the next round", "hold": "put {name} on hold", "reject": "mark {name} as not progressing",
+          "hire": "hire {name} and email them the offer"}
 
 
 def decide(svc: Service, s: Doc, candidate_name: str, action: str, confirm: bool = False, note: str = "") -> Doc:
@@ -242,6 +248,9 @@ def decide(svc: Service, s: Doc, candidate_name: str, action: str, confirm: bool
         say = f"Done. {c['name']} is moving on" + (f" to {nxt['name']}, and I've emailed the booking link." if nxt else ".")
     elif action == "hold":
         say = f"Done. {c['name']} is on hold."
+    elif action == "hire":
+        p = svc.hiring_progress(job, svc.candidates(job["id"]))
+        say = f"Done. {c['name']} is hired, and I've emailed the offer. {job['title']}: {p['hired']} of {p['openings']} positions filled."
     else:
         say = f"Done. {c['name']} is marked as not progressing. No email goes out until your team sends one."
     return {"say": say, "done": True, "nextRound": nxt["name"] if nxt else None}

@@ -135,6 +135,10 @@ export class HttpApi implements Api {
     return call<import('./types').DashboardView>('GET', '/dashboard');
   }
 
+  setOpenings(jobId: string, openings: number) {
+    return call<unknown>('POST', `/jobs/${encodeURIComponent(jobId)}/openings`, { openings });
+  }
+
   async createJob(input: NewJob) {
     return (await call<{ id: string }>('POST', '/jobs', input)).id;
   }

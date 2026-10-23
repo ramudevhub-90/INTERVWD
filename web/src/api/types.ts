@@ -24,6 +24,8 @@ export interface Job {
   location: string;
   description: string;
   status: 'open' | 'closed';
+  /** How many people this job is hiring. */
+  openings?: number;
   createdAt: string;
 }
 
@@ -69,6 +71,7 @@ export type CandidateStatus =
   | 'in_progress'
   | 'completed' // interview done, waiting for a recruiter
   | 'advanced'
+  | 'hired'
   | 'on_hold'
   | 'rejected';
 
@@ -164,7 +167,7 @@ export interface Interview {
   endedAt?: string;
 }
 
-export type DecisionAction = 'advance' | 'hold' | 'reject';
+export type DecisionAction = 'advance' | 'hold' | 'reject' | 'hire';
 
 export interface Decision {
   id: string;
@@ -205,14 +208,14 @@ export interface ReportsView {
     candidates: number; interviews: number; completed: number; completionRate: number | null; avgScore: number | null;
     advanced: number; rejected: number; onHold: number; autoAdvanced: number; awaiting: number;
     avgDecisionHours: number | null; avgInterviewMin: number | null; aiAgreement: number | null; aiAgreementOf: number;
-    takeovers: number; teamQuestions: number;
+    takeovers: number; teamQuestions: number; hired?: number; openings?: number;
   };
   funnel: { label: string; count: number }[];
   triage: { fastTrack: number; review: number; below: number };
   reasons: { label: string; count: number }[];
   scores: { label: string; count: number }[];
   daily: DayCount[];
-  jobs: { id: string; title: string; candidates: number; interviewed: number; avgScore: number | null; advanced: number; awaiting: number }[];
+  jobs: { id: string; title: string; candidates: number; interviewed: number; avgScore: number | null; advanced: number; awaiting: number; openings?: number; hired?: number }[];
   criteria: { name: string; avg: number | null; n: number }[];
   identity: { checked: number; matched: number; approvedByPerson: number; locked: number };
   sources: { signedUp: number; addedByTeam: number; scannedQr?: number };
@@ -223,6 +226,7 @@ export interface JobView {
   job: Job;
   rounds: Round[];
   candidates: (Candidate & { overall?: number | null; roundName: string })[];
+  progress?: { openings: number; hired: number; hiredNames: string[] };
 }
 
 export interface InviteView {
@@ -286,6 +290,7 @@ export interface NewJob {
   title: string;
   location: string;
   description: string;
+  openings?: number;
 }
 
 export interface NewRound {

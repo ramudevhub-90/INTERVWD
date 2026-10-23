@@ -110,7 +110,7 @@ function Body({ r }: { r: ReportsView }) {
         <Kpi icon="mic" label="Interviews completed" value={t.completed} hint={`${pct(t.completionRate)} of booked interviews that are due`} />
         <Kpi icon="chart" label="Average score" value={num(t.avgScore)} hint="Out of 5, across every round" />
         <Kpi icon="clock" label="Time to decision" value={hours(t.avgDecisionHours)} hint="From interview end to your call" />
-        <Kpi icon="check" label="Moved on" value={t.advanced} hint={`${t.autoAdvanced} fast-tracked by the AI`} />
+        <Kpi icon="check" label="Hired" value={`${t.hired ?? 0} of ${t.openings ?? 0}`} hint={`positions filled · ${t.advanced} moved on (${t.autoAdvanced} fast-tracked by the AI)`} />
         <Kpi icon="pause" label="Waiting for you" value={t.awaiting} hint={`${t.onHold} on hold · ${t.rejected} not progressed`} />
         <Kpi icon="sparkle" label="People agree with the AI" value={pct(t.aiAgreement)} hint={t.aiAgreementOf ? `On ${t.aiAgreementOf} clear passes and clear misses` : 'No decisions to compare yet'} />
         <Kpi icon="calendar" label="Average interview" value={t.avgInterviewMin == null ? '–' : `${Math.round(t.avgInterviewMin)} min`} hint={`${r.modes.ai} AI · ${r.modes.human} with a person · ${r.modes.office} at the office`} />
@@ -181,12 +181,12 @@ function Body({ r }: { r: ReportsView }) {
         <div className="card-head"><h2>By job</h2></div>
         <div className="rp-table-wrap">
           <table className="rp-table">
-            <thead><tr><th>Job</th><th>Candidates</th><th>Interviewed</th><th>Average score</th><th>Moved on</th><th>Waiting for you</th></tr></thead>
+            <thead><tr><th>Job</th><th>Candidates</th><th>Interviewed</th><th>Average score</th><th>Moved on</th><th>Filled</th><th>Waiting for you</th></tr></thead>
             <tbody>
               {r.jobs.map((j) => (
                 <tr key={j.id}>
                   <td><Link to={`/app/jobs/${j.id}`}>{j.title}</Link></td>
-                  <td>{j.candidates}</td><td>{j.interviewed}</td><td>{num(j.avgScore)}</td><td>{j.advanced}</td>
+                  <td>{j.candidates}</td><td>{j.interviewed}</td><td>{num(j.avgScore)}</td><td>{j.advanced}</td><td>{j.hired ?? 0} of {j.openings ?? 1}</td>
                   <td>{j.awaiting > 0 ? <span className="badge badge-warning">{j.awaiting}</span> : 0}</td>
                 </tr>
               ))}

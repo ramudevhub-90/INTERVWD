@@ -98,7 +98,8 @@ def build(svc: Service, org_id: str, days: int = 30) -> Doc:
         {"label": "Applied or invited", "count": len(people)},
         {"label": "Booked", "count": sum(1 for c in people if not reached(c, "invited", "pending_approval", "declined"))},
         {"label": "Interviewed", "count": sum(1 for c in people if c["id"] in interviewed_ids or reached(c, "advanced", "rejected", "on_hold"))},
-        {"label": "Moved on", "count": sum(1 for c in people if reached(c, "advanced") or c.get("roundsPassed"))},
+        {"label": "Moved on", "count": sum(1 for c in people if reached(c, "advanced", "hired") or c.get("roundsPassed"))},
+        {"label": "Hired", "count": sum(1 for c in people if reached(c, "hired"))},
     ]
 
     # Activity per day (last 14 days)
@@ -112,7 +113,8 @@ def build(svc: Service, org_id: str, days: int = 30) -> Doc:
         jc = [c for c in cands.values() if c["jobId"] == j["id"]]
         job_rows.append({"id": j["id"], "title": j["title"], "candidates": len(jc), "interviewed": len([iv for iv in done if iv["jobId"] == j["id"]]),
                          "avgScore": _avg([float(iv["report"]["overall"]) for iv in jd]),
-                         "advanced": sum(1 for c in jc if c["status"] == "advanced"), "awaiting": sum(1 for c in jc if c["status"] == "completed")})
+                         "advanced": sum(1 for c in jc if c["status"] == "advanced"), "awaiting": sum(1 for c in jc if c["status"] == "completed"),
+                         "openings": int(j.get("openings") or 1), "hired": sum(1 for c in jc if c["status"] == "hired")})
     crit: dict[str, list[float]] = {}
     for iv in scored:
         for c in iv["report"].get("criteria", []):
@@ -133,6 +135,7 @@ def build(svc: Service, org_id: str, days: int = 30) -> Doc:
             "avgDecisionHours": _avg(hours), "avgInterviewMin": _avg(minutes),
             "aiAgreement": round(agree / total, 2) if total else None, "aiAgreementOf": total,
             "takeovers": takeovers, "teamQuestions": team_qs,
+            "hired": sum(1 for c in people if c.get("status") == "hired"), "openings": sum(int(j.get("openings") or 1) for j in jobs),
         },
         "funnel": funnel,
         "triage": {"fastTrack": bands.get("fast_track", 0), "review": bands.get("review", 0), "below": bands.get("below", 0)},

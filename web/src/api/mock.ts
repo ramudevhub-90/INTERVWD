@@ -363,6 +363,13 @@ export class MockApi implements Api {
     return { room, orgName: 'Northwind Labs', interviewId: null };
   }
 
+  async setOpenings(jobId: string, openings: number) {
+    const j = this.find(this.db.jobs, jobId, 'job') as Job & { openings?: number };
+    j.openings = openings;
+    this.save();
+    return j;
+  }
+
   async createJob(input: NewJob) {
     await pause();
     const { orgId } = this.recruiter();

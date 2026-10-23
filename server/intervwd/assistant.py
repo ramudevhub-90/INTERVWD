@@ -57,7 +57,7 @@ SPECS: list[Doc] = [
     *[
         {"name": f"{a}_candidate", "description": d + " Call with confirm=false first to read back; confirm=true only after the recruiter says yes.",
          "inputSchema": {"json": {"type": "object", "properties": {"candidate_name": _name, "confirm": {"type": "boolean"}, "note": {"type": "string"}}, "required": ["candidate_name", "confirm"]}}}
-        for a, d in [("advance", "Move a candidate to the next round and email them its booking link."), ("hold", "Put a candidate on hold."),
+        for a, d in [("advance", "Move a candidate to the next round and email them its booking link."), ("hire", "Hire a candidate and email them the offer."), ("hold", "Put a candidate on hold."),
                      ("reject", "Mark a candidate as not progressing.")]
     ],
 ]
@@ -79,6 +79,7 @@ def run_tool(svc: Service, session: Doc, name: str, args: Doc, tz_offset_min: in
         "review_signup": lambda: tools.review_signup(svc, session, str(args.get("candidate_name", "")), bool(args.get("approve", True)), bool(args.get("confirm"))),
         "let_candidate_in": lambda: tools.let_in(svc, session, str(args.get("candidate_name", "")), bool(args.get("confirm"))),
         "advance_candidate": lambda: tools.decide(svc, session, str(args.get("candidate_name", "")), "advance", bool(args.get("confirm")), str(args.get("note", ""))),
+        "hire_candidate": lambda: tools.decide(svc, session, str(args.get("candidate_name", "")), "hire", bool(args.get("confirm")), str(args.get("note", ""))),
         "hold_candidate": lambda: tools.decide(svc, session, str(args.get("candidate_name", "")), "hold", bool(args.get("confirm")), str(args.get("note", ""))),
         "reject_candidate": lambda: tools.decide(svc, session, str(args.get("candidate_name", "")), "reject", bool(args.get("confirm")), str(args.get("note", ""))),
     }
@@ -183,7 +184,8 @@ class Assistant:
             return {"text": r.get("say") or r.get("error"), "pendingConfirmation": True}
         if re.search(r"\b(approval|approve|sign-?ups?|locked|identity)\b", text):
             return run("list_pending_approvals")
-        action = ("advance" if re.search(r"\b(move|advance|progress|next round|shortlist)\b", text)
+        action = ("hire" if re.search(r"\b(hire|offer)\b", text)
+                  else "advance" if re.search(r"\b(move|advance|progress|next round|shortlist)\b", text)
                   else "reject" if re.search(r"\b(reject|decline|not progress)\b", text) else "hold" if re.search(r"\bhold\b", text) else None)
         if action and named:
             out = run(f"{action}_candidate", candidate_name=named, confirm=False)
@@ -201,7 +203,7 @@ class Assistant:
             return run("list_awaiting_decision")
         if re.search(r"\b(today|how did|interviews|schedule|who's|who is)\b", text):
             return run("get_todays_interviews")
-        if re.search(r"\b(jobs|roles|openings|positions|hiring for)\b", text):
+        if re.search(r"\b(jobs|roles|openings|positions|hiring for|filled|hired)\b", text):
             return run("list_jobs")
         if re.search(r"\b(invite|link)\b", text):
             job = next((j["title"] for j in self.svc.jobs(session["orgId"]) if j["title"].split()[0].lower() in text), None)
