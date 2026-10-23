@@ -119,7 +119,9 @@ export function Invite() {
             <p className="muted small" style={{ margin: '14px 0 18px' }}>
               {waiting
                 ? `${possessive(data.orgName)} team will review your profile. Once they approve it, we'll email your interview link to ${form.email.trim()}.`
-                : `We've emailed your interview link to ${form.email.trim()}. Use a quiet room, Chrome or Edge, and allow the camera and microphone.`}
+                : data.round.location === 'office'
+                  ? `We've emailed the details and a calendar invite to ${form.email.trim()}.`
+                  : `We've emailed your interview link to ${form.email.trim()}. Use a quiet room, Chrome or Edge, and allow the camera and microphone.`}
             </p>
             {booked.interviewId && data.round.location === 'office' ? (
               <p className="small" style={{ marginBottom: 6 }}>At {data.round.address}. When you arrive, say to the Echo Show at reception: <b>"Alexa, I'm here for my interview."</b></p>
@@ -135,7 +137,7 @@ export function Invite() {
               </>
             )}
             {booked.interviewId && data.round.mode !== 'human' && <Link className="btn btn-block btn-ghost" style={{ marginTop: 8 }} to={`/practice/${booked.interviewId}`}><Icon name="sparkle" /> Practise first with Alexa (not shared)</Link>}
-            {booked.interviewId && <p className="faint" style={{ marginTop: 10 }}>You can open the room early to test your camera{face ? ' and do the identity check' : ''}.</p>}
+            {booked.interviewId && data.round.location !== 'office' && data.round.mode !== 'human' && <p className="faint" style={{ marginTop: 10 }}>You can open the room early to test your camera{face ? ' and do the identity check' : ''}.</p>}
           </div>
         </div>
       </>

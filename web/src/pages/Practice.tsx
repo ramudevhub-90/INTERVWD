@@ -57,7 +57,6 @@ export function Practice() {
       setQuestion(s.question);
       setProgress({ index: s.index, of: s.of });
       await say(`${s.intro} First question. ${s.question}`);
-      startListening();
     } catch (e) {
       setErr((e as Error).message);
       setState('idle');
@@ -76,9 +75,9 @@ export function Practice() {
       if (out.question) {
         setQuestion(out.question);
         setProgress({ index: out.index, of: out.of });
-        await say(`Next question. ${out.question}`);
         setFeedback(undefined);
-        startListening();
+        setAnswer('');
+        await say(`Next question. ${out.question}`);
       } else {
         setDone(true);
         await say("That's the end of practice. Well done. You can go again, or start your real interview when you're ready.");
@@ -124,12 +123,15 @@ export function Practice() {
                     </div>
                   ) : (
                     <>
-                      <textarea rows={3} value={answer} onChange={(e) => setAnswer(e.target.value)} readOnly={state === 'listening'}
-                        placeholder={state === 'listening' ? 'Listening… speak your answer' : 'Type your answer'}
+                      <textarea rows={3} value={answer}
+                        onChange={(e) => { if (state === 'listening') { listener.current?.stop(); setState('idle'); } setAnswer(e.target.value); setErr(undefined); }}
+                        placeholder={state === 'listening' ? 'Listening… speak your answer' : 'Type your answer, or press Speak'}
                         style={{ marginTop: 14, background: '#161a2b', borderColor: '#2a3049', color: '#eef0f8' }} />
                       <div className="row" style={{ marginTop: 10 }}>
                         <button className="btn btn-primary" onClick={submit} disabled={state === 'speaking' || state === 'thinking'}>Done answering</button>
-                        {state !== 'listening' && canListen && <button className="btn" onClick={startListening} disabled={state !== 'idle'}><Icon name="mic" /> Speak</button>}
+                        {canListen && (state === 'listening'
+                          ? <button className="btn" onClick={() => { listener.current?.stop(); setState('idle'); }}><Icon name="micOff" /> Stop listening</button>
+                          : <button className="btn" onClick={startListening} disabled={state !== 'idle'}><Icon name="mic" /> Speak</button>)}
                       </div>
                     </>
                   )}
