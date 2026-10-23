@@ -13,6 +13,9 @@ const SNAPSHOT_EVERY_MS = 90_000;
 type Stage = 'setup' | 'live' | 'done';
 type Mode = 'speaking' | 'listening' | 'thinking' | 'idle';
 
+
+/** How long a pause ends an answer (people pause mid-thought; much shorter cuts them off). */
+const PAUSE_MS = 3500;
 export function InterviewRoom() {
   const { id = '' } = useParams();
   const { data, error } = useLoad(() => api.room(id), [id]);
@@ -165,6 +168,24 @@ export function InterviewRoom() {
     }
   };
 
+  // Hands-free, like a conversation: when the candidate stops talking for a moment, the answer goes.
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  const [sending, setSending] = useState(false);
+  useEffect(() => {
+    setSending(false);
+    if (mode !== 'listening' || typing || live.takenOverBy) return;
+    const words = draft.trim().split(/\s+/).filter(Boolean).length;
+    const asked = [...turns].reverse().find((t) => t.role === 'interviewer');
+    if (words < (asked?.kind === 'invite_questions' ? 1 : 3)) return;
+    const warn = setTimeout(() => setSending(true), PAUSE_MS - 1500);
+    const go = setTimeout(() => submitRef.current(), PAUSE_MS);
+    return () => {
+      clearTimeout(warn);
+      clearTimeout(go);
+    };
+  }, [draft, mode, typing, live.takenOverBy]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const toggleTyping = () => {
     listener.current?.stop();
     const next = !typing;
@@ -300,7 +321,7 @@ export function InterviewRoom() {
               </div>
               <ul className="small muted" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8 }}>
                 <li>Find a quiet place and look at the camera.</li>
-                <li>The interviewer speaks each question. Answer out loud, then press <b>Finish answer</b>.</li>
+                <li>The interviewer speaks each question. Just answer out loud: when you pause for a few seconds, it moves on by itself.</li>
                 <li>Take your time. Use <b>Repeat</b> if you missed something.</li>
                 {!canListen && <li>Your browser can't caption speech, so you'll type answers. Chrome or Edge lets you speak.</li>}
               </ul>
@@ -352,7 +373,7 @@ export function InterviewRoom() {
                 <textarea rows={4} value={draft} readOnly={!typing && mode === 'listening'} onChange={(e) => { setDraft(e.target.value); setErr(undefined); }} placeholder={typing ? 'Type your answer' : mode === 'listening' ? 'Start speaking…' : ''} />
               </div>
               <div className="row wrap">
-                <button className="btn btn-primary" onClick={submit} disabled={mode === 'speaking' || mode === 'thinking' || !!live.takenOverBy}><Icon name="send" /> Finish answer</button>
+                <button className="btn btn-primary" onClick={submit} disabled={mode === 'speaking' || mode === 'thinking' || !!live.takenOverBy}><Icon name="send" /> {typing ? 'Send answer' : 'Done'}</button>
                 <button className="btn" onClick={repeat} disabled={mode === 'thinking'}><Icon name="repeat" /> Repeat</button>
                 {canListen && (
                   <button className="btn btn-ghost" onClick={toggleTyping} disabled={mode === 'speaking' || mode === 'thinking'}>
@@ -360,6 +381,9 @@ export function InterviewRoom() {
                   </button>
                 )}
               </div>
+              {mode === 'listening' && !typing && (
+                <p className="faint" style={{ marginTop: 0 }}>{sending ? 'Sending your answer… keep talking to add more.' : 'Answer naturally. When you pause for a few seconds, the interviewer carries on.'}</p>
+              )}
               {err && <p className="error" style={{ marginTop: 0 }}>{err}</p>}
 
               <div className="divider" />
