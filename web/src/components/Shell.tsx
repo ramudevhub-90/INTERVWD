@@ -38,15 +38,13 @@ export function Shell() {
         <NavLink to="/app/jobs" className="nav-link"><Icon name="briefcase" /><span>Jobs</span></NavLink>
         <NavLink to="/app/alexa" className="nav-link"><Icon name="alexa" /><span>Alexa+</span></NavLink>
         <NavLink to="/app/settings" className="nav-link"><Icon name="link" /><span>Settings</span></NavLink>
-        <button className="nav-link btn-ghost" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }} onClick={signOut} title="Sign out">
-          <Icon name="logout" /><span>Sign out</span>
-        </button>
         <div className="foot row">
           <div className="avatar">{initials(session.name)}</div>
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div className="small ellipsis" style={{ fontWeight: 500 }}>{session.name}</div>
             <div className="faint ellipsis">{session.orgName}</div>
           </div>
+          <button className="signout" onClick={signOut} title="Sign out" aria-label="Sign out"><Icon name="logout" size={18} /></button>
         </div>
         {api.mode === 'mock' && <div className="faint" style={{ padding: '10px 8px 0' }}>Sample data</div>}
       </aside>

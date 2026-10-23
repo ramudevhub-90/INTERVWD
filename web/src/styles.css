@@ -129,6 +129,8 @@ a.list-row:hover { background: var(--surface-2); }
 .nav-link:hover { background: var(--surface-2); color: var(--text); }
 .nav-link.active { background: var(--accent-soft); color: var(--accent-text); }
 .side .foot { margin-top: auto; padding: 12px 8px 0; border-top: 1px solid var(--border); }
+.signout { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--text-2); cursor: pointer; }
+.signout:hover { background: var(--accent-soft); color: var(--danger); border-color: var(--border); }
 .main { padding: 28px 36px 60px; max-width: 1180px; width: 100%; }
 .focus { min-height: 100vh; }
 .focus-top { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--surface); }
@@ -141,7 +143,8 @@ a.list-row:hover { background: var(--surface-2); }
   .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; align-content: start; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--border); }
   .side .brand { margin: 0 auto 0 0; }
-  .side .foot { display: none; }
+  .side .foot { margin: 0; padding: 0; border: 0; } /* phones: only the sign-out icon */
+  .side .foot > :not(.signout) { display: none; }
   .nav-link span { display: none; }
   .main { padding: 20px 16px 48px; }
 }
