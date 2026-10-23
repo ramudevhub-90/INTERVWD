@@ -318,6 +318,7 @@ export class MockApi implements Api {
       id: id('round'), jobId, orgId: orgId!, index, name: `Round ${index} · ${input.name.trim()}`, durationMin: input.durationMin,
       criteria: input.criteria.map((c) => ({ id: id('c'), ...c })), questions: input.questions, inviteCode: `${slug}-r${index}-${Math.random().toString(36).slice(2, 6)}`, slots: [],
       identityCheck: input.identityCheck, requireApproval: input.requireApproval, publicPath: named,
+      decisionMode: input.decisionMode, autoAdvance: input.autoAdvance,
     };
     this.db.rounds.push(round);
     this.save();

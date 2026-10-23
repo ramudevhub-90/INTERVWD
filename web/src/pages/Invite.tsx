@@ -45,7 +45,7 @@ export function Invite() {
       </>
     );
   }
-  const face = data.round.identityCheck;
+  const face = data.round.identityCheck && !data.invited?.hasPhoto; // returning candidates already have a photo
   const cvOptional = !!data.invited?.hasCv;
 
   const submit = async (e: FormEvent) => {
@@ -106,7 +106,7 @@ export function Invite() {
       <PublicTop />
       <div className="centered">
         <form className="card" style={{ width: '100%', maxWidth: 540 }} onSubmit={submit} noValidate>
-          <p className="faint">{data.invited ? `${data.orgName} invited you, ${data.invited.name.split(' ')[0]}, to interview for` : `${data.orgName} invited you to interview for`}</p>
+          <p className="faint">{data.invited?.returning ? `Welcome back, ${data.invited.name.split(' ')[0]}. ${data.orgName} would like you to take the next round for` : data.invited ? `${data.orgName} invited you, ${data.invited.name.split(' ')[0]}, to interview for` : `${data.orgName} invited you to interview for`}</p>
           <h1 style={{ fontSize: 24, margin: '4px 0 6px' }}>{data.job.title}</h1>
           <p className="muted small">{data.job.location} · {data.round.name} · about {data.round.durationMin} minutes, by voice with an AI interviewer</p>
           {(data.round.requireApproval || face) && (

@@ -206,6 +206,22 @@ export function CandidateReport() {
           <IdentityPanel photoUrl={candidate.photoUrl} photoDeleted={candidate.photoDeleted} interview={current} required={!!data.identityRequired}
             busy={!!busy} onLetIn={() => act('hold', () => api.approveIdentity(candidate.id))} />
 
+          {current?.triage && (
+            <div className="card" style={{ borderColor: current.triage.band === 'fast_track' ? 'var(--success)' : current.triage.band === 'review' ? 'var(--warning)' : 'var(--border)' }}>
+              <h3 className="row" style={{ gap: 8 }}>
+                <Icon name="sparkle" />
+                {current.triage.band === 'fast_track' ? 'AI: clear pass' : current.triage.band === 'review' ? 'AI: needs your judgement' : 'AI: below the bar'}
+              </h3>
+              <ul className="small muted" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                {current.triage.reasons.map((r) => <li key={r} style={{ marginBottom: 4 }}>{r}</li>)}
+              </ul>
+              <p className="faint" style={{ marginTop: 8 }}>
+                Bar for this round: overall {current.triage.rule.minOverall.toFixed(1)}, each criterion {current.triage.rule.minEach.toFixed(1)}.
+                {current.triage.band === 'below' ? ' The AI never rejects anyone; you decide.' : ''}
+              </p>
+            </div>
+          )}
+
           <div className="card">
             <h3>Your decision</h3>
             <p className="faint" style={{ margin: '4px 0 12px' }}>{round?.name}. The AI never decides for you.</p>
@@ -220,7 +236,7 @@ export function CandidateReport() {
                 {next && <p className="faint" style={{ marginTop: 10 }}>Moving on emails {candidate.name.split(' ')[0]} the {next.name.split(' · ')[0]} booking link.</p>}
               </>
             ) : (
-              <p className="small muted">{finished ? 'Decision recorded. See the history below.' : 'Available once the interview is finished.'}</p>
+              <p className="small muted">{candidate.status === 'invited' && decisions.length ? `Moved on to ${round?.name}. They've been emailed a personal link to pick a time.` : finished ? 'Decision recorded. See the history below.' : 'Available once the interview is finished.'}</p>
             )}
             {err && <p className="error">{err}</p>}
           </div>
@@ -231,7 +247,11 @@ export function CandidateReport() {
               {decisions.map((d) => (
                 <div key={d.id} className="list-row" style={{ alignItems: 'flex-start' }}>
                   <div className="grow">
-                    <div className="small" style={{ fontWeight: 500 }}>{d.action === 'advance' ? 'Moved on' : d.action === 'hold' ? 'Put on hold' : 'Not progressing'}</div>
+                    <div className="small" style={{ fontWeight: 500 }}>
+                      {d.action === 'advance' ? 'Moved on' : d.action === 'hold' ? 'Put on hold' : 'Not progressing'}
+                      {' · '}{rounds.find((r) => r.id === d.roundId)?.name.split(' · ')[0]}
+                      {d.automatic && <span className="badge badge-success" style={{ marginLeft: 6 }}>Fast-tracked by AI</span>}
+                    </div>
                     <div className="faint">{d.by} · {when(d.at)}</div>
                     {d.note && <div className="small muted" style={{ marginTop: 4 }}>{d.note}</div>}
                   </div>

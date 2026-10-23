@@ -252,8 +252,10 @@ REPORT_SCHEMA = {
                     "name": {"type": "string"},
                     "score": {"type": "number", "description": "1 to 5; 3 meets the bar, 4 strong, 5 exceptional."},
                     "evidence": {"type": "string", "description": "A short quote from the candidate plus why it earned this score."},
+                    "confidence": {"type": "string", "enum": ["high", "medium", "low"],
+                                   "description": "How sure you are of this score from the evidence: low when answers were short, vague or contradictory."},
                 },
-                "required": ["name", "score", "evidence"],
+                "required": ["name", "score", "evidence", "confidence"],
             },
         },
         "summary": {"type": "string", "description": "Two sentences for the recruiter."},
@@ -333,8 +335,53 @@ def score(nova: Nova, interview: Doc, round: Doc, job: Doc, ctx: list[Doc] | Non
             got = by_name.get(c["name"].lower())
             if not got:
                 break
-            scores.append({"criterionId": c["id"], "name": c["name"], "score": _clamp(got.get("score", 1)), "evidence": str(got.get("evidence", ""))[:500]})
+            conf = str(got.get("confidence", "medium")).lower()
+            scores.append({"criterionId": c["id"], "name": c["name"], "score": _clamp(got.get("score", 1)), "evidence": str(got.get("evidence", ""))[:500],
+                           "confidence": conf if conf in ("high", "medium", "low") else "medium"})
         if len(scores) == len(round["criteria"]):
-            return _report(scores, answers, str(result.get("summary", ""))[:600] or None,
-                           [str(h)[:200] for h in result.get("highlights", [])][:4], [str(c)[:200] for c in result.get("concerns", [])][:4])
-    return rule_score(interview, round["criteria"])
+            return {**_report(scores, answers, str(result.get("summary", ""))[:600] or None,
+                              [str(h)[:200] for h in result.get("highlights", [])][:4], [str(c)[:200] for c in result.get("concerns", [])][:4]),
+                    "scoredBy": "nova"}
+    return {**rule_score(interview, round["criteria"]), "scoredBy": "rules"}
+
+
+# ---------- Triage: which results the AI may fast-track, and which need a person ----------
+
+DEFAULT_RULE = {"minOverall": 4.0, "minEach": 3.0}
+NEAR_BAR = 0.3  # within this of the bar counts as too close to call
+SPREAD = 2.0  # criteria this far apart disagree too much to call
+MIN_ANSWER_WORDS = 120  # less than this across the interview is too little evidence
+
+
+def triage(report: Doc, interview: Doc, round: Doc) -> Doc:
+    """Sorts a finished interview into fast_track (clearly above the round's bar and confident),
+    review (the AI is unsure, with reasons) or below (clearly under the bar). The AI only ever
+    fast-tracks; review and below both go to a person, who makes every "no"."""
+    rule = {**DEFAULT_RULE, **(round.get("autoAdvance") or {})}
+    bar, each = float(rule["minOverall"]), float(rule["minEach"])
+    scores = [c["score"] for c in report["criteria"]]
+    overall = report["overall"]
+    words = sum(len(t["text"].split()) for t in interview["turns"] if t["kind"] == "answer")
+    unsure: list[str] = []
+    if abs(overall - bar) < NEAR_BAR:
+        unsure.append(f"Overall {overall} is close to the bar of {bar}.")
+    if scores and max(scores) - min(scores) >= SPREAD:
+        hi, lo = max(report["criteria"], key=lambda c: c["score"]), min(report["criteria"], key=lambda c: c["score"])
+        unsure.append(f"Criteria disagree: {hi['name']} {hi['score']} but {lo['name']} {lo['score']}.")
+    low = [c["name"] for c in report["criteria"] if c.get("confidence") == "low"]
+    if low:
+        unsure.append(f"Low confidence in the {', '.join(low)} score{'s' if len(low) > 1 else ''}.")
+    if words < MIN_ANSWER_WORDS:
+        unsure.append(f"Only {words} words of answers: too little evidence.")
+    if report.get("scoredBy") == "rules":
+        unsure.append("Scored by the backup rules because Nova was unavailable.")
+    ident = interview.get("identity") or {}
+    if ident.get("status") == "approved":
+        unsure.append("The identity check didn't match; a recruiter let them in.")
+    if any(x.get("match") == "no_match" for x in interview.get("snapshots", [])):
+        unsure.append("Some snapshots didn't match the profile photo.")
+    if unsure:
+        return {"band": "review", "reasons": unsure, "rule": rule}
+    if overall >= bar and min(scores, default=0) >= each:
+        return {"band": "fast_track", "reasons": [f"Overall {overall} meets the bar of {bar}, every criterion at least {each}, and the AI is confident."], "rule": rule}
+    return {"band": "below", "reasons": [f"Overall {overall} is under the bar of {bar}." if overall < bar else f"A criterion is under {each}."], "rule": rule}

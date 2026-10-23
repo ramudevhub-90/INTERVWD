@@ -55,6 +55,7 @@ export function Dashboard() {
                 <div style={{ fontWeight: 500 }}>{candidate.name}</div>
                 <div className="faint ellipsis">{job.title} · {round.name}</div>
               </div>
+              {interview.triage?.band === 'review' && <span className="badge badge-warning" title={interview.triage.reasons.join(' ')}>AI unsure</span>}
               <ScoreBadge score={interview.report?.overall} />
             </Link>
           ))}

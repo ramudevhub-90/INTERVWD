@@ -37,7 +37,10 @@ function RoundCard({ round, onChange }: { round: Round; onChange: (r: Round) => 
       <div className="card-head">
         <div>
           <h2>{round.name}</h2>
-          <p className="faint" style={{ marginTop: 4 }}>AI voice interview · about {round.durationMin} minutes · {round.questions.length} core questions with follow-ups</p>
+          <p className="faint" style={{ marginTop: 4 }}>
+            AI voice interview · about {round.durationMin} minutes · {round.questions.length} core questions with follow-ups ·{' '}
+            {round.decisionMode === 'auto' ? `AI fast-tracks clear passes (≥ ${round.autoAdvance?.minOverall.toFixed(1)})` : 'A person decides'}
+          </p>
         </div>
       </div>
 

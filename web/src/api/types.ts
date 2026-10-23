@@ -53,6 +53,8 @@ export interface Round {
   publicPath?: string; // the invite link's path: <company>/<job>-r<round>, e.g. northwind-labs/backend-engineer-r1
   identityCheck?: boolean; // face must match the profile photo before the interview starts
   requireApproval?: boolean; // HR approves sign-ups before the interview link goes out
+  decisionMode?: 'human' | 'auto'; // auto: the AI fast-tracks clear, confident passes; everything else goes to a person
+  autoAdvance?: { minOverall: number; minEach: number };
 }
 
 export type CandidateStatus =
@@ -100,6 +102,7 @@ export interface CriterionScore {
   name: string;
   score: number; // 1 to 5, one decimal
   evidence: string;
+  confidence?: 'high' | 'medium' | 'low';
 }
 
 export interface Report {
@@ -109,6 +112,14 @@ export interface Report {
   concerns: string[];
   criteria: CriterionScore[];
   generatedAt: string;
+  scoredBy?: 'nova' | 'rules';
+}
+
+/** Where a finished interview goes: fast-tracked by the AI, or to a person (unsure, or below the bar). */
+export interface Triage {
+  band: 'fast_track' | 'review' | 'below';
+  reasons: string[];
+  rule: { minOverall: number; minEach: number };
 }
 
 export interface Snapshot {
@@ -138,6 +149,7 @@ export interface Interview {
   turns: Turn[];
   snapshots: Snapshot[];
   report?: Report;
+  triage?: Triage;
   identity?: Identity;
   startedAt?: string;
   endedAt?: string;
@@ -153,6 +165,7 @@ export interface Decision {
   note: string;
   by: string;
   at: string;
+  automatic?: boolean;
 }
 
 // ---------- Composite views ----------
@@ -178,7 +191,7 @@ export interface InviteView {
   job: Job;
   round: Pick<Round, 'id' | 'name' | 'index' | 'durationMin' | 'publicPath'> & { identityCheck: boolean; requireApproval: boolean };
   openSlots: Slot[];
-  invited?: { name: string; email: string; hasCv: boolean }; // a candidate HR added, on their personal link
+  invited?: { name: string; email: string; hasCv: boolean; hasPhoto?: boolean; returning?: boolean }; // on a personal link
 }
 
 export interface CandidateView {
@@ -236,6 +249,8 @@ export interface NewRound {
   questions: string[];
   identityCheck: boolean;
   requireApproval: boolean;
+  decisionMode: 'human' | 'auto';
+  autoAdvance: { minOverall: number; minEach: number };
 }
 
 export interface JoinInput {

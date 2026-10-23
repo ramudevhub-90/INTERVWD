@@ -91,6 +91,7 @@ def reset_demo(svc: Service) -> None:
         r = {"id": rid, "jobId": job, "orgId": DEMO_ORG, "index": index, "name": name, "durationMin": 20, "criteria": criteria, "questions": questions,
              "identityCheck": rid in ("round_backend_1", "round_storeops_1"), "requireApproval": rid == "round_storeops_1",
              "publicPath": f"northwind-labs/{path}",
+             "decisionMode": "auto" if rid == "round_backend_1" else "human", "autoAdvance": {"minOverall": 4.0, "minEach": 3.0},
              "inviteCode": code, "slots": [{"id": f"{sid}_{tag}", "start": _at(h), **({"candidateId": c} if c else {})} for sid, h, c in slots]}
         svc.save_round(r)
         s.put("invite", code, {"roundId": rid})

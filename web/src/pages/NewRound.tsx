@@ -31,6 +31,7 @@ export function NewRound() {
   const [form, setForm] = useState(() => ({
     name: TEMPLATES.screen.name, durationMin: 20, criteria: TEMPLATES.screen.criteria.map(([name, description]) => ({ name, description })),
     questions: [...TEMPLATES.screen.questions], identityCheck: true, requireApproval: true,
+    decisionMode: 'human' as 'human' | 'auto', autoAdvance: { minOverall: 4.0, minEach: 3.0 },
   }));
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -120,6 +121,34 @@ export function NewRound() {
               <span><span className="small" style={{ fontWeight: 600 }}>{label}</span><br /><span className="faint">{hint}</span></span>
             </label>
           ))}
+        </div>
+
+        <div className="card">
+          <h3 style={{ marginBottom: 4 }}>Decisions</h3>
+          <p className="faint" style={{ marginBottom: 10 }}>Who moves candidates to the next round after this one.</p>
+          {([
+            ['human', 'A person decides everything', 'Every finished interview waits for you.'],
+            ['auto', 'AI fast-tracks clear passes', 'Candidates clearly above your bar, where the AI is confident, move on straight away. If the AI is unsure (close to the bar, mixed scores, thin answers, an identity problem) or the score is below the bar, a person decides. The AI never rejects anyone.'],
+          ] as const).map(([mode, label, hint]) => (
+            <label key={mode} className="row" style={{ alignItems: 'flex-start', padding: '8px 0', cursor: 'pointer' }}>
+              <input type="radio" name="decisionMode" checked={form.decisionMode === mode} onChange={() => setForm({ ...form, decisionMode: mode })} style={{ width: 16, marginTop: 3 }} />
+              <span><span className="small" style={{ fontWeight: 600 }}>{label}</span><br /><span className="faint">{hint}</span></span>
+            </label>
+          ))}
+          {form.decisionMode === 'auto' && (
+            <div className="grid cols-2" style={{ gap: 12, marginTop: 6 }}>
+              <label className="field"><span>Overall score at least</span>
+                <select value={form.autoAdvance.minOverall} onChange={(e) => setForm({ ...form, autoAdvance: { ...form.autoAdvance, minOverall: Number(e.target.value) } })}>
+                  {[3.5, 3.8, 4.0, 4.2, 4.5].map((v) => <option key={v} value={v}>{v.toFixed(1)} / 5</option>)}
+                </select>
+              </label>
+              <label className="field"><span>Every criterion at least</span>
+                <select value={form.autoAdvance.minEach} onChange={(e) => setForm({ ...form, autoAdvance: { ...form.autoAdvance, minEach: Number(e.target.value) } })}>
+                  {[2.5, 3.0, 3.5, 4.0].map((v) => <option key={v} value={v}>{v.toFixed(1)} / 5</option>)}
+                </select>
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="row">

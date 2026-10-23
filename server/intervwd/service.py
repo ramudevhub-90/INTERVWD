@@ -290,7 +290,10 @@ class Service:
         round = {"id": new_id("round"), "jobId": job_id, "orgId": org_id, "index": index, "name": f"Round {index} · {name[:60]}",
                  "durationMin": int(body.get("durationMin") or 20), "criteria": criteria, "questions": questions, "inviteCode": code, "slots": [],
                  "identityCheck": bool(body.get("identityCheck", True)), "requireApproval": bool(body.get("requireApproval", True)),
-                 "publicPath": f"{org_slug}/{round_slug}"}
+                 "publicPath": f"{org_slug}/{round_slug}",
+                 "decisionMode": "auto" if body.get("decisionMode") == "auto" else "human",
+                 "autoAdvance": {"minOverall": min(5.0, max(1.0, float((body.get("autoAdvance") or {}).get("minOverall", 4.0)))),
+                                 "minEach": min(5.0, max(1.0, float((body.get("autoAdvance") or {}).get("minEach", 3.0))))}}
         self.save_round(round)
         self.store.put("invite", code, {"roundId": round["id"]})
         self.store.put("invite", f"{org_slug}~{round_slug}", {"roundId": round["id"]})
@@ -339,24 +342,34 @@ class Service:
             "decisions": self.decisions(candidate_id),
         }
 
-    def decide(self, org_id: str, candidate_id: str, action: str, note: str, by: str) -> Doc:
+    def decide(self, org_id: str, candidate_id: str, action: str, note: str, by: str, automatic: bool = False) -> Doc:
         if action not in ("advance", "hold", "reject"):
             raise Problem("Choose advance, hold or reject.")
+        if automatic and action != "advance":
+            raise Problem("Only a person can hold or reject a candidate.", 403)
         c = self._owned("candidate", candidate_id, org_id, "candidate")
         if c["status"] not in ("completed", "on_hold"):
             raise Problem(f"{c['name']} has no finished interview waiting for a decision.", 409)
-        d = {"id": new_id("d"), "candidateId": candidate_id, "roundId": c["roundId"], "action": action, "note": note.strip()[:1000], "by": by, "at": engine.now()}
+        d = {"id": new_id("d"), "candidateId": candidate_id, "roundId": c["roundId"], "action": action, "note": note.strip()[:1000], "by": by,
+             "at": engine.now(), **({"automatic": True} if automatic else {})}
         self.store.put("decision", d["id"], d, index=(f"candidate#{candidate_id}#decisions", d["at"]))
-        c["status"] = {"advance": "advanced", "hold": "on_hold", "reject": "rejected"}[action]
-        self.save_candidate(c)
-        if action != "hold":
-            self._purge_faces(c, [i for i in self.interviews(org_id) if i["candidateId"] == candidate_id])
         nxt = self.next_round(c)
+        c["status"] = {"advance": "advanced", "hold": "on_hold", "reject": "rejected"}[action]
+        token = None
         if action == "advance" and nxt:
+            # Same candidate, next round: a personal link keeps their profile (CV, photo) and skips approval.
+            token = secrets.token_urlsafe(18)
+            self.store.put("candidate-invite", token, {"candidateId": c["id"]})
+            c.update(roundId=nxt["id"], status="invited", roundsPassed=[*c.get("roundsPassed", []), d["roundId"]])
+        self.save_candidate(c)
+        if action == "reject" or (action == "advance" and not nxt):
+            self._purge_faces(c, [i for i in self.interviews(org_id) if i["candidateId"] == candidate_id])  # final decision
+        if token and nxt:
             org, job = self.org(org_id), self._get("job", c["jobId"], "job")
             self._email(c["email"], f"{org['name']}: you're through to {nxt['name'].split(' · ')[0]}",
                         f"Hi {c['name'].split()[0]},\n\nGood news: {org['name']} would like you to take the next step for {job['title']}, "
-                        f"{nxt['name']}.\n\nBook a time here: {self.invite_url(nxt)}\n\nIntervwd, on behalf of {org['name']}")
+                        f"{nxt['name']}.\n\nPick a time here (your profile is already filled in): {self.invite_url(nxt)}?t={token}\n\n"
+                        f"Intervwd, on behalf of {org['name']}")
         return {"decision": d, "candidate": c, "nextRound": nxt}
 
     def next_round(self, c: Doc) -> Doc | None:
@@ -467,7 +480,8 @@ class Service:
             "round": {k: round.get(k) for k in ("id", "name", "index", "durationMin", "publicPath")}
             | {"identityCheck": bool(round.get("identityCheck")), "requireApproval": bool(round.get("requireApproval")) and not invited},
             "openSlots": [s for s in round["slots"] if not s.get("candidateId") and _parse(s["start"]).timestamp() > cutoff],
-            **({"invited": {"name": invited["name"], "email": invited["email"], "hasCv": bool(invited.get("cvKey"))}} if invited else {}),
+            **({"invited": {"name": invited["name"], "email": invited["email"], "hasCv": bool(invited.get("cvKey")),
+                         "hasPhoto": bool(invited.get("photoKey")), "returning": bool(invited.get("roundsPassed"))}} if invited else {}),
         }
 
     def _check_cv(self, cv: bytes, cv_type: str) -> str:
@@ -525,7 +539,7 @@ class Service:
         if cv:
             cv_type = self._check_cv(cv, cv_type)
         needs_face = bool(round.get("identityCheck"))
-        if needs_face:
+        if needs_face and not (invited and invited.get("photoKey")):
             if not photo:
                 raise Problem("Upload a clear photo of your face for the identity check.")
             if not face_consent:
@@ -706,9 +720,12 @@ class Service:
         if done:
             rubric_ctx = self.search(iv, " ".join(f"{x['name']} {x['description']}" for x in round["criteria"]) + " " + " ".join(round["questions"]), ("interviewer",), 6)
             iv["report"] = engine.score(self.nova, iv, round, job, rubric_ctx)
+            iv["triage"] = engine.triage(iv["report"], iv, round)
             c["status"] = "completed"
             self.save_candidate(c)
         self.save_interview(iv)
+        if done and round.get("decisionMode") == "auto" and iv["triage"]["band"] == "fast_track":
+            self.decide(iv["orgId"], c["id"], "advance", f"Moved on automatically. {iv['triage']['reasons'][0]}", "Intervwd (automatic)", automatic=True)
         return {"turns": turns, "done": done, "progress": engine.progress(iv, round)}
 
     def add_snapshot(self, interview_id: str, image: bytes, content_type: str) -> None:

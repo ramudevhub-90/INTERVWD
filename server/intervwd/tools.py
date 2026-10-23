@@ -227,6 +227,13 @@ def briefing(svc: Service, s: Doc, tz_offset_min: int = 0) -> Doc:
         who = names.get(top["candidateId"], {}).get("name", "A candidate")
         parts.append(f"{len(finished)} interview{'s' if len(finished) > 1 else ''} finished {'since you last asked' if svc.store.get('briefing', key) else 'in the last day'}. "
                      f"{who} scored highest, {top['report']['overall']}.")
+    fast = [names.get(d["candidateId"], {}).get("name", "A candidate") for c in names.values() for d in svc.decisions(c["id"]) if d.get("automatic") and d["at"] > seen]
+    if fast:
+        parts.append(f"{', '.join(fast)} {'was' if len(fast) == 1 else 'were'} fast-tracked to the next round: clear passes the AI was confident about.")
+    unsure = [names.get(iv["candidateId"], {}).get("name") for iv in finished if (iv.get("triage") or {}).get("band") == "review"
+              and names.get(iv["candidateId"], {}).get("status") == "completed"]
+    if unsure:
+        parts.append(f"The AI wasn't sure about {', '.join(n for n in unsure if n)}, so {'that one needs' if len(unsure) == 1 else 'those need'} your judgement.")
     if pending:
         parts.append(f"{', '.join(pending)} {'is' if len(pending) == 1 else 'are'} waiting for you to approve their profile.")
     if locked:

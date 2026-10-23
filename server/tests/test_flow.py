@@ -123,8 +123,10 @@ def test_assistant_rules_need_a_yes(env):
     assert client.get("/api/candidates/cand_rahul", headers=h).json()["candidate"]["status"] == "completed"
     done = ask("yes")
     assert "Round 2" in done["text"]
-    assert client.get("/api/candidates/cand_rahul", headers=h).json()["candidate"]["status"] == "advanced"
-    assert any(m[0] == "rahul.mehta@example.com" and "northwind-labs/backend-engineer-r2" in m[2] for m in outbox.sent)
+    rahul = client.get("/api/candidates/cand_rahul", headers=h).json()["candidate"]
+    assert rahul["status"] == "invited" and rahul["roundId"] == "round_backend_2"  # same candidate, now in Round 2
+    mail = next(m[2] for m in outbox.sent if m[0] == "rahul.mehta@example.com")
+    assert "northwind-labs/backend-engineer-r2?t=" in mail  # personal link: profile kept, no approval
 
 
 def test_oauth_link_and_mcp_tools(env):
@@ -359,3 +361,79 @@ def test_company_can_rename_its_links(env):
     code = re.search(r"\b(\d{6})\b", outbox.sent[-1][2]).group(1)
     oh = {"Authorization": f"Bearer {client.post('/api/auth/verify', json={'email': 'al@other.test', 'code': code}).json()['token']}"}
     assert client.post("/api/settings", headers=oh, json={"slug": "acme-retail"}).status_code == 409
+
+
+class ScoringNova(MockNova):
+    """Nova stand-in that scores every criterion the same, with a chosen confidence."""
+
+    enabled = True
+
+    def __init__(self, score: float, confidence: str = "high") -> None:
+        self.score, self.confidence = score, confidence
+
+    def json(self, system, prompt, schema, document=None, max_tokens=1200):
+        if "criteria" in schema.get("properties", {}):
+            names = re.findall(r"^- ([^:]+):", prompt, re.M)
+            return {"criteria": [{"name": n, "score": self.score, "evidence": "quote", "confidence": self.confidence} for n in names],
+                    "summary": "Summary.", "highlights": ["h"], "concerns": []}
+        return None
+
+    def chat(self, *a, **k):
+        return None
+
+
+def run_interview(client, h, decision_mode="auto", rounds=2):
+    job = client.post("/api/jobs", headers=h, json={"title": "Support Lead", "location": "", "description": "Lead our customer support team day to day."}).json()["id"]
+    made = [client.post(f"/api/jobs/{job}/rounds", headers=h, json={
+        "name": f"R{i}", "criteria": [{"name": "Empathy", "description": "Understands customers"}, {"name": "Ownership", "description": "Follows through"}],
+        "questions": ["Tell me about a hard customer.", "How do you follow up?"], "identityCheck": False, "requireApproval": False,
+        "decisionMode": decision_mode, "autoAdvance": {"minOverall": 4.0, "minEach": 3.0}}).json() for i in range(rounds)]
+    slot = open_slot(client, h, made[0]["id"])
+    iv = book(client, made[0]["publicPath"].replace("/", "~"), slot, photo=False).json()["interviewId"]
+    client.post(f"/api/interviews/{iv}/start")
+    long = "I listened first, repeated their problem back, fixed the billing error the same day, and called them back a week later to check. " * 2
+    for _ in range(6):
+        out = client.post(f"/api/interviews/{iv}/answer", json={"text": long}).json()
+        if out["done"]:
+            break
+    svc = client.app.state.svc
+    return svc, svc.store.get("interview", iv), made
+
+
+def make_env(nova):
+    outbox = Outbox()
+    return TestClient(create_app(MemoryStore(), MemoryBlobs(), nova, outbox, demo_code="424242", kb=LocalKnowledge())), outbox
+
+
+def test_clear_pass_is_fast_tracked_to_the_next_round():
+    client, outbox = make_env(ScoringNova(4.6))
+    with client:
+        h = demo_login(client)
+        svc, iv, rounds = run_interview(client, h)
+        assert iv["triage"]["band"] == "fast_track"
+        c = svc.store.get("candidate", iv["candidateId"])
+        assert c["status"] == "invited" and c["roundId"] == rounds[1]["id"]
+        d = svc.decisions(c["id"])[-1]
+        assert d["automatic"] and d["action"] == "advance" and "automatically" in d["note"]
+
+
+def test_unsure_and_below_go_to_a_person():
+    for score, conf, band in ((4.1, "high", "review"), (4.6, "low", "review"), (2.4, "high", "below")):
+        client, _ = make_env(ScoringNova(score, conf))
+        with client:
+            h = demo_login(client)
+            svc, iv, _ = run_interview(client, h)
+            assert iv["triage"]["band"] == band, (score, conf, iv["triage"])
+            assert svc.store.get("candidate", iv["candidateId"])["status"] == "completed"  # waits for a person
+    # Automatic decisions can only ever move people on.
+    from intervwd.service import Problem
+    with pytest.raises(Problem):
+        svc.decide("org_northwind", iv["candidateId"], "reject", "", "Intervwd", automatic=True)
+
+
+def test_human_mode_never_auto_advances():
+    client, _ = make_env(ScoringNova(4.8))
+    with client:
+        h = demo_login(client)
+        svc, iv, _ = run_interview(client, h, decision_mode="human")
+        assert iv["triage"]["band"] == "fast_track" and svc.store.get("candidate", iv["candidateId"])["status"] == "completed"
