@@ -68,7 +68,7 @@ HISTORY = [
     ("cand_h_nikhil", "Nikhil Joshi", "job_analyst", "an1", 3.4, "review", "Low confidence in the SQL score.", "hold", False, 10, 15, "team", "", False),
     ("cand_h_aditi", "Aditi Verma", "job_analyst", "an1", 2.2, "below", "", "reject", False, 12, 13, "link", "", False),
 ]
-SEEDED_CANDIDATES = {"cand_rahul", "cand_ana", "cand_vikram", "cand_neha", "cand_meera", "cand_arjun", *(h[0] for h in HISTORY)}
+SEEDED_CANDIDATES = {"cand_ramu", "cand_rahul", "cand_ana", "cand_vikram", "cand_neha", "cand_meera", "cand_arjun", *(h[0] for h in HISTORY)}
 
 
 def _clear_extras(svc: Service) -> None:
@@ -200,6 +200,7 @@ def reset_demo(svc: Service) -> None:
         [(4.4, "Detailed opening checklist with staffing by hour."), (4.5, '"I talk to each of them separately first, then together."'),
          (4.1, "Offered substitutes and a callback for the out-of-stock item."), (4.2, "Clear and calm.")]))
     _history(svc, {"be1": be1, "so1": so1, "an1": an1})
+    _real_identity(svc, be1)
     for iid, band, why in (("iv_demo_rahul", "review", "Low confidence in the System design score."),
                            ("iv_demo_ana", "review", "Criteria disagree: System design 4.6 but Python and APIs 3.4."),
                            ("iv_demo_neha", "below", "Below the bar."), ("iv_demo_arjun", "fast_track", "Clear pass.")):
@@ -259,3 +260,21 @@ def _history(svc: Service, rounds: dict[str, Doc]) -> None:
                                           "note": "Moved on automatically: a clear pass." if auto else notes[action],
                                           "by": "Intervwd (automatic)" if auto else "Priya Sharma", "at": at, **({"automatic": True} if auto else {})},
               index=(f"candidate#{cid}#decisions", at))
+
+
+def _real_identity(svc: Service, round: Doc) -> None:
+    """Ramu Pal, the builder, as a real candidate: his real profile photo, a real live-check frame from his own
+    interview on 23 Oct 2026, and the real Amazon Rekognition result for the two (99.96%). Booked, about to start."""
+    from pathlib import Path
+
+    here = Path(__file__).parent / "demo_assets"
+    cid, iid = "cand_ramu", "iv_demo_ramu"
+    photo, live = f"faces/{DEMO_ORG}/{cid}/reference", f"faces/{DEMO_ORG}/{cid}/live-1"
+    svc.blobs.save(photo, (here / "ramu_profile.jpg").read_bytes(), "image/jpeg")
+    svc.blobs.save(live, (here / "ramu_live.jpg").read_bytes(), "image/jpeg")
+    svc.save_candidate({"id": cid, "orgId": DEMO_ORG, "jobId": "job_backend", "roundId": round["id"], "name": "Ramu Pal", "email": "ramu.pal@example.com",
+                        "cvName": "Ramu_Pal_Resume.pdf", "cvSummary": "Full stack and cloud developer: CRM and dialler tools, client projects for large enterprises, AWS.",
+                        "skills": ["AWS", "Full stack", "CRM systems"], "status": "scheduled", "photoKey": photo, "createdAt": _at(-2)})
+    svc.save_interview({"id": iid, "orgId": DEMO_ORG, "jobId": "job_backend", "roundId": round["id"], "candidateId": cid, "slotStart": _at(1),
+                        "status": "scheduled", "turns": [], "snapshots": [],
+                        "identity": {"status": "matched", "attempts": 1, "similarity": 99.96, "lastResult": "matched", "checkedAt": _at(-0.2), "liveKey": live}})

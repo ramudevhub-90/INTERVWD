@@ -180,7 +180,7 @@ function IdentityPanel({ photoUrl, photoDeleted, interview, required, onLetIn, b
           {[['Profile photo', photoUrl], ['Live check', id?.liveUrl]].map(([t, u]) => (
             <figure key={t} style={{ margin: 0, flex: 1 }}>
               {u ? <img src={u} alt={t} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 10, border: '1px solid var(--border)' }} />
-                : <div className="empty faint" style={{ aspectRatio: '1', display: 'grid', placeItems: 'center', border: '1px dashed var(--border)', borderRadius: 10, padding: 6 }}>None yet</div>}
+                : <div className="empty faint" style={{ aspectRatio: '1', display: 'grid', placeItems: 'center', border: '1px dashed var(--border)', borderRadius: 10, padding: 6 }}>No photo on file</div>}
               <figcaption className="faint" style={{ marginTop: 4 }}>{t}</figcaption>
             </figure>
           ))}
